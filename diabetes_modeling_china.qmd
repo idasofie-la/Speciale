@@ -1,0 +1,167 @@
+---
+title: "diabetes modelling china"
+format: html
+editor: visual
+---
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(readxl)
+```
+
+## Importing data
+
+```{r}
+df <- read_excel("diabetes work china.xlsx")
+```
+
+```{r}
+# OR from Chinese paper
+OR <- 1.73
+LCL <- 1.37
+UCL <- 2.18
+
+# log scaling OR
+beta <- log(OR)
+# log scaling the uncertainty
+beta_se <- (log(UCL)-log(LCL)) /(2 *1.96)
+
+# Assuming expousre follows lognormal distribution
+z25 <- qnorm(0.25)
+z75 <- qnorm(0.75)
+
+df <- df %>%
+  mutate(meanlog = log(p_50),
+         sdlog = (log(p_75) - log(p_25)) / (z75 - z25))
+
+
+# choosing reference/baseline exposure
+df <- df %>%
+  mutate(x_ref = p_25)
+
+# PAF function
+# continous exposure
+paf_cont <- function(RR) {
+  (mean(RR) - 1) / mean(RR)
+} 
+```
+
+## Monte Carlo
+
+```{r}
+run_mc_row_china <- function(i_diabetes, meanlog, sdlog, x_ref,
+                             beta, beta_se,
+                             nsim = 10000,
+                             baseline_uncertainty = FALSE) {
+
+  # Danish exposure distribution
+  X <- rlnorm(nsim, meanlog = meanlog, sdlog = sdlog)
+
+  # Avoiding values below reference, LOD as minimum-risk level
+  X <- pmax(X, x_ref)
+
+  # Uncertainty in dose-response coefficient
+  beta_s <- rnorm(1, mean = beta, sd = beta_se)
+
+  # Relative risk for each simulated exposure
+  # take each simulated exposure X
+  # compare it to the reference
+  # use the Chinese slope to convert that exposure difference into an RR
+  RR <- exp(beta_s * (log(X) - log(x_ref)))
+
+  # Continuous PAF
+  PAF <- paf_cont(RR)
+
+  # Baseline cases
+  base_cases <- if (baseline_uncertainty) {
+    rpois(1, lambda = i_diabetes)
+  } else {
+    i_diabetes
+  }
+
+  AC <- PAF * base_cases
+
+  tibble(
+    PAF = PAF,
+    AC  = AC
+  )
+}
+```
+
+```{r}
+run_mc_summary_china <- function(i_diabetes, meanlog, sdlog, x_ref,
+                                 beta, beta_se,
+                                 nsim_outer = 5000,
+                                 nsim_inner = 5000,
+                                 baseline_uncertainty = FALSE) {
+
+  sims <- map_dfr(seq_len(nsim_outer), function(i) {
+    run_mc_row_china(
+      i_diabetes = i_diabetes,
+      meanlog = meanlog,
+      sdlog = sdlog,
+      x_ref = x_ref,
+      beta = beta,
+      beta_se = beta_se,
+      nsim = nsim_inner,
+      baseline_uncertainty = baseline_uncertainty
+    )
+  })
+
+  tibble(
+    PAF_med = median(sims$PAF),
+    PAF_lo  = quantile(sims$PAF, 0.025),
+    PAF_hi  = quantile(sims$PAF, 0.975),
+    AC_med  = median(sims$AC),
+    AC_lo   = quantile(sims$AC, 0.025),
+    AC_hi   = quantile(sims$AC, 0.975)
+  )
+}
+```
+
+```{r}
+results_cases <- df %>%
+  mutate(
+    mc = pmap(
+      list(i_diabetes, meanlog, sdlog, x_ref),
+      ~ run_mc_summary_china(
+        i_diabetes = ..1,
+        meanlog = ..2,
+        sdlog = ..3,
+        x_ref = ..4,
+        beta = beta,
+        beta_se = beta_se,
+        nsim_outer = 3000,
+        nsim_inner = 3000,
+        baseline_uncertainty = FALSE
+      )
+    )
+  ) %>%
+  unnest(mc)
+
+results_cases
+```
+
+## 
+
+```{r}
+# implied RR at observed Danish percentiles, relative to x_ref
+rr_from_x <- function(x, x_ref, beta) {
+  exp(beta * (log(x) - log(x_ref)))
+}
+
+rr_check <- df %>%
+  transmute(
+    group,
+    x_ref,
+    RR_p25 = rr_from_x(p_25, x_ref, beta),
+    RR_p50 = rr_from_x(p_50, x_ref, beta),
+    RR_p75 = rr_from_x(p_75, x_ref, beta),
+    RR_p90 = rr_from_x(p_90, x_ref, beta),
+    RR_p95 = rr_from_x(p_95, x_ref, beta)
+  )
+
+rr_check
+```
