@@ -1,0 +1,326 @@
+---
+title: "diabetes_modeling_korea"
+format: html
+editor: visual
+---
+
+### Libraries
+
+```{r}
+library(tidyverse)
+library(readxl)
+```
+
+## Importing data
+
+```{r}
+# loading danish inputs, sex, LOD, BPS percentiles & diabetes incidence
+# maybe name tít better :-)
+# doing lognormal distribution
+df <- read_excel("diabetes work china-kopi.xlsx") %>%
+  mutate(
+    meanlog_dk = log(p_50),
+    sdlog_dk   = (log(p_75) - log(p_25)) / (qnorm(0.75) - qnorm(0.25))
+  )
+```
+
+## Korean study inputs, BPS and diabetes
+
+```{r}
+# Supplementary Table S6: DM ORs among participants with BPS > LOD
+OR_t2  <- 1.73
+LCL_t2 <- 1.00
+UCL_t2 <- 2.98
+
+OR_t3  <- 2.13
+LCL_t3 <- 1.29
+UCL_t3 <- 3.50
+
+# Convert 95% CI to log-scale SE
+# simulating uncertainty
+se_t2 <- (log(UCL_t2) - log(LCL_t2)) / (2 * 1.96)
+se_t3 <- (log(UCL_t3) - log(LCL_t3)) / (2 * 1.96)
+
+# Supplementary Table S1: Korean detectable BPS distribution (> LOD)
+# min = 0.019, p25 = 0.029, p50 = 0.049, p75 = 0.104, max = 35.603
+meanlog_kor <- log(0.049)
+sdlog_kor   <- (log(0.104) - log(0.029)) / (qnorm(0.75) - qnorm(0.25))
+
+# Reconstructed Korean tertile cutpoints from fitted detectable distribution
+# finding 33rd and 66th percentile
+cut_t1_t2 <- qlnorm(1/3, meanlog_kor, sdlog_kor)
+cut_t2_t3 <- qlnorm(2/3, meanlog_kor, sdlog_kor)
+```
+
+## Duration inputs for YLD
+
+```{r}
+# Median age at onset of type 2 diabetes in DK
+age_m <- 62.1
+age_f <- 64.6
+
+# Life expectancy in DK
+life_m <- 78.8
+life_f <- 82.8
+
+# estimating the duration
+D_m <- life_m - age_m
+D_f <- life_f - age_f
+
+# adding to dataframe
+df <- df %>%
+  mutate(
+    D_years = case_when(
+      str_detect(group, "^Male")   ~ D_m,
+      str_detect(group, "^Female") ~ D_f,
+      TRUE ~ NA_real_
+    )
+  )
+```
+
+## Inputs for YLL 
+
+```{r}
+# deaths and diabetes from GBD (DK + T2D)
+deaths_f <- 566.89
+deaths_m <- 715.34
+
+yll_f <- 7837.82
+yll_m <- 12702.54
+
+# calculating standard expected years of life lost
+seyll_f <- yll_f / deaths_f
+seyll_m <- yll_m / deaths_m
+
+# adding to dataframe
+df <- df %>%
+  mutate(
+    deaths = case_when(
+      str_detect(group, "^Female") ~ deaths_f,
+      str_detect(group, "^Male")   ~ deaths_m,
+      TRUE ~ NA_real_
+    ),
+    seyll = case_when(
+      str_detect(group, "^Female") ~ seyll_f,
+      str_detect(group, "^Male")   ~ seyll_m,
+      TRUE ~ NA_real_
+    )
+  )
+```
+
+## Disability weight inputs
+
+```{r}
+# Uncomplicated diabetes mellitus type 2
+DW_mode <- 0.049011415
+DW_min  <- 0.0311213425
+DW_max  <- 0.072092547
+```
+
+## Helper functions
+
+```{r}
+# PERT distribution for disability weight uncertainty
+rpert <- function(n, min, mode, max) {
+  alpha <- 1 + 4 * (mode - min) / (max - min)
+  beta  <- 1 + 4 * (max - mode) / (max - min)
+  min + rbeta(n, alpha, beta) * (max - min)
+}
+
+# Categorical PAF
+paf_cat <- function(p, rr) {
+  sumterm <- sum(p * (rr - 1))
+  sumterm / (1 + sumterm)
+}
+```
+
+## Monte Carlo
+
+```{r}
+run_mc_row_daly_korea <- function(i_diabetes,
+                                  meanlog_dk,
+                                  sdlog_dk,
+                                  lod_dk,
+                                  D_years,
+                                  deaths,
+                                  seyll,
+                                  DW_min,
+                                  DW_mode,
+                                  DW_max,
+                                  nsim = 10000,
+                                  baseline_uncertainty = FALSE) {
+
+  # Simulate Danish BPS exposure
+  X <- rlnorm(nsim, meanlog = meanlog_dk, sdlog = sdlog_dk)
+
+  # Restrict to Danish detectable values
+  # diabetes association only used among participants with BPS above LOD
+  X_det <- X[X > lod_dk]
+
+  # NA if failing
+  if (length(X_det) < 10) {
+    return(tibble(
+      p_detectable = NA_real_,
+      p_t1 = NA_real_,
+      p_t2 = NA_real_,
+      p_t3 = NA_real_,
+      rr2 = NA_real_,
+      rr3 = NA_real_,
+      PAF = NA_real_,
+      AC = NA_real_,
+      AD = NA_real_,
+      YLD = NA_real_,
+      YLL = NA_real_,
+      DALY = NA_real_
+    ))
+  }
+
+  # Classify detectable Danish exposures using reconstructed Korean tertiles
+  grp <- case_when(
+    X_det <= cut_t1_t2 ~ "T1",
+    X_det <= cut_t2_t3 ~ "T2",
+    TRUE               ~ "T3"
+  )
+
+  # calculating proportions
+  p1 <- mean(grp == "T1")
+  p2 <- mean(grp == "T2")
+  p3 <- mean(grp == "T3")
+
+  # Sample OR uncertainty once per iteration
+  # OR is used here as an approximation to RR
+  rr2 <- exp(rnorm(1, mean = log(OR_t2), sd = se_t2))
+  rr3 <- exp(rnorm(1, mean = log(OR_t3), sd = se_t3))
+
+  
+
+  # Attributable incident diabetes cases
+  base_cases <- if (baseline_uncertainty) {
+    rpois(1, lambda = i_diabetes)
+  } else {
+    i_diabetes
+  }
+
+  AC <- PAF * base_cases
+
+  # YLD
+  DW  <- rpert(1, DW_min, DW_mode, DW_max)
+  YLD <- AC * D_years * DW
+
+  # YLL
+  # Assumption: the same attributable fraction applies to diabetes deaths
+  AD  <- PAF * deaths
+  YLL <- AD * seyll
+
+  # DALY
+  DALY <- YLD + YLL
+
+  tibble(
+    p_detectable = p_detectable,
+    p_t1 = p1,
+    p_t2 = p2,
+    p_t3 = p3,
+    rr2 = rr2,
+    rr3 = rr3,
+    PAF = PAF,
+    AC = AC,
+    AD = AD,
+    YLD = YLD,
+    YLL = YLL,
+    DALY = DALY
+  )
+}
+```
+
+```{r}
+run_mc_summary_daly_korea <- function(i_diabetes,
+                                      meanlog_dk,
+                                      sdlog_dk,
+                                      lod_dk,
+                                      D_years,
+                                      deaths,
+                                      seyll,
+                                      DW_min,
+                                      DW_mode,
+                                      DW_max,
+                                      nsim_outer = 3000,
+                                      baseline_uncertainty = FALSE) {
+
+  sims <- map_dfr(seq_len(nsim_outer), ~ run_mc_row_daly_korea(
+    i_diabetes = i_diabetes,
+    meanlog_dk = meanlog_dk,
+    sdlog_dk   = sdlog_dk,
+    lod_dk     = lod_dk,
+    D_years    = D_years,
+    deaths     = deaths,
+    seyll      = seyll,
+    DW_min     = DW_min,
+    DW_mode    = DW_mode,
+    DW_max     = DW_max,
+    nsim       = 10000,
+    baseline_uncertainty = baseline_uncertainty
+  ))
+
+  tibble(
+    p_detectable_med = median(sims$p_detectable, na.rm = TRUE),
+    p_t1_med         = median(sims$p_t1, na.rm = TRUE),
+    p_t2_med         = median(sims$p_t2, na.rm = TRUE),
+    p_t3_med         = median(sims$p_t3, na.rm = TRUE),
+
+    PAF_med = median(sims$PAF, na.rm = TRUE),
+    PAF_lo  = quantile(sims$PAF, 0.025, na.rm = TRUE),
+    PAF_hi  = quantile(sims$PAF, 0.975, na.rm = TRUE),
+
+    AC_med = median(sims$AC, na.rm = TRUE),
+    AC_lo  = quantile(sims$AC, 0.025, na.rm = TRUE),
+    AC_hi  = quantile(sims$AC, 0.975, na.rm = TRUE),
+
+    AD_med = median(sims$AD, na.rm = TRUE),
+    AD_lo  = quantile(sims$AD, 0.025, na.rm = TRUE),
+    AD_hi  = quantile(sims$AD, 0.975, na.rm = TRUE),
+
+    YLD_med = median(sims$YLD, na.rm = TRUE),
+    YLD_lo  = quantile(sims$YLD, 0.025, na.rm = TRUE),
+    YLD_hi  = quantile(sims$YLD, 0.975, na.rm = TRUE),
+
+    YLL_med = median(sims$YLL, na.rm = TRUE),
+    YLL_lo  = quantile(sims$YLL, 0.025, na.rm = TRUE),
+    YLL_hi  = quantile(sims$YLL, 0.975, na.rm = TRUE),
+
+    DALY_med = median(sims$DALY, na.rm = TRUE),
+    DALY_lo  = quantile(sims$DALY, 0.025, na.rm = TRUE),
+    DALY_hi  = quantile(sims$DALY, 0.975, na.rm = TRUE)
+  )
+}
+```
+
+```{r}
+results_daly_korea <- df %>%
+  mutate(
+    mc = pmap(
+      list(i_diabetes, meanlog_dk, sdlog_dk, LOD, D_years, deaths, seyll),
+      ~ run_mc_summary_daly_korea(
+        i_diabetes = ..1,
+        meanlog_dk = ..2,
+        sdlog_dk   = ..3,
+        lod_dk     = ..4,
+        D_years    = ..5,
+        deaths     = ..6,
+        seyll      = ..7,
+        DW_min     = DW_min,
+        DW_mode    = DW_mode,
+        DW_max     = DW_max,
+        nsim_outer = 3000,
+        baseline_uncertainty = FALSE
+      )
+    )
+  ) %>%
+  unnest(mc)
+
+results_daly_korea
+```
+
+```{r}
+print(cut_t1_t2)
+print(cut_t2_t3)
+```
