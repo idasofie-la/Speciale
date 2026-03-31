@@ -10,6 +10,7 @@ editor: visual
 library(tidyverse)
 library(readxl)
 library(rriskDistributions)
+library(writexl)
 ```
 
 ## Importing data
@@ -337,4 +338,9 @@ results_daly_korea
 ```{r}
 print(cut1)
 print(cut2)
+```
+
+```{r}
+getwd()
+write_xlsx(results_daly_korea, "results_diabetes_korea.xlsx")
 ```
