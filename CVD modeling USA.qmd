@@ -52,7 +52,7 @@ se_t3 <- (log(UCL_t3) - log(LCL_t3)) / (2 * 1.96)
 ## Inputs for YLL/YLD
 
 ```{r}
-# from GB<d denmark ischemic heart disease
+# from GBD denmark ischemic heart disease
 yld_f <- 3995
 yld_m <- 7428
 

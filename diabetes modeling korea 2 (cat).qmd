@@ -1,34 +1,31 @@
 ---
-title: "diabetes_modeling_korea"
+title: "diabetes modeling korea 2"
 format: html
 editor: visual
 ---
 
-### Libraries
-
 ```{r}
+
+
 library(tidyverse)
 library(readxl)
 library(rriskDistributions)
 ```
 
-## Importing data
-
 ```{r}
-# loading danish inputs, sex, LOD, BPS percentiles & diabetes incidence
-# maybe name it better :-)
-# doing lognormal distribution tot the danish percentiles
+# Loading Danish inputs: sex, LOD, BPS percentiles, and diabetes incidence
+# Fitting a lognormal distribution from Danish percentiles
+
 df <- read_excel("diabetes work china-kopi.xlsx") %>%
   mutate(
     meanlog_dk = log(p_50),
-    sdlog_dk   = (log(p_75) - log(p_25)) / (qnorm(0.75) - qnorm(0.25))
+    sdlog_dk = (log(p_75) - log(p_25)) / (qnorm(0.75) - qnorm(0.25))
   )
 ```
 
-## Korean study inputs, BPS and diabetes
-
 ```{r}
-# Supplementary Table S6: DM ORs among participants with BPS > LOD
+# Supplementary Table S6: diabetes ORs among participants with BPS > LOD
+
 OR_t2  <- 1.73
 LCL_t2 <- 1.00
 UCL_t2 <- 2.98
@@ -38,10 +35,8 @@ LCL_t3 <- 1.29
 UCL_t3 <- 3.50
 
 # Convert 95% CI to log-scale SE
-# simulating uncertainty
 se_t2 <- (log(UCL_t2) - log(LCL_t2)) / (2 * 1.96)
 se_t3 <- (log(UCL_t3) - log(LCL_t3)) / (2 * 1.96)
-
 ```
 
 ```{r}
@@ -52,114 +47,69 @@ fit_kor <- get.lnorm.par(
   p = c(0.25, 0.50, 0.75),
   q = c(0.029, 0.049, 0.104),
   show.output = FALSE,
-  plot = TRUE
+  plot = FALSE
 )
 
-# extract the fitted lognormal parameters as ordinary numbers
 meanlog_kor <- unname(fit_kor["meanlog"])
 sdlog_kor   <- unname(fit_kor["sdlog"])
 
-# Simulate Korean detectable exposure distribution
-set.seed(123)
-x_kor <- rlnorm(1e6, meanlog = fit_kor["meanlog"], sdlog = fit_kor["sdlog"])
-
 # Tertile cutpoints among detectable Korean values
-cut1 <- qlnorm(1/3, meanlog = fit_kor["meanlog"], sdlog = fit_kor["sdlog"])
-cut2 <- qlnorm(2/3, meanlog = fit_kor["meanlog"], sdlog = fit_kor["sdlog"])
+cut1 <- qlnorm(1/3, meanlog = meanlog_kor, sdlog = sdlog_kor)
+cut2 <- qlnorm(2/3, meanlog = meanlog_kor, sdlog = sdlog_kor)
 
-# Medians within each tertile
-dose_t1 <- median(x_kor[x_kor <= cut1])
-dose_t2 <- median(x_kor[x_kor > cut1 & x_kor <= cut2])
-dose_t3 <- median(x_kor[x_kor > cut2])
-
-
-## Build dose-response dataset and fit linear trend ##
-study_dat <- tibble(
-  dose  = c(dose_t1, dose_t2, dose_t3),
-  dose_c = c(dose_t1, dose_t2, dose_t3) - dose_t1,
-  logrr = log(c(1, 1.73, 2.13)),
-  se    = c(
-    NA,
-    (log(2.98) - log(1.00)) / (2 * 1.96),
-    (log(3.50) - log(1.29)) / (2 * 1.96)
-  )
-)
-
-fit_lin <- lm(logrr ~ 0 + dose_c,
-              data = study_dat[-1, ],
-              weights = 1 / study_dat$se[-1]^2)
-
-# estimated slope of line + uncertainty
-beta_hat <- unname(coef(fit_lin)["dose_c"])
-beta_se  <- summary(fit_lin)$coefficients["dose_c", "Std. Error"]
-
-# reference doese
-x_ref <- dose_t1
-
-
-beta_hat
-beta_se
-summary(fit_lin)
-study_dat
+cut1
+cut2
 ```
 
-## Duration inputs for YLD
-
 ```{r}
-# Median age at onset of type 2 diabetes in DK
+# Median age at onset of type 2 diabetes in Denmark
 age_m <- 62.1
 age_f <- 64.6
 
-# Life expectancy in DK
+# Life expectancy in Denmark
 life_m <- 78.8
 life_f <- 82.8
 
-# estimating the duration
+# Estimated duration
 D_m <- life_m - age_m
 D_f <- life_f - age_f
 
-# adding to dataframe
 df <- df %>%
   mutate(
     D_years = case_when(
-      str_detect(group, "^Male")   ~ D_m,
+      str_detect(group, "^Male") ~ D_m,
       str_detect(group, "^Female") ~ D_f,
       TRUE ~ NA_real_
     )
   )
 ```
 
-## Inputs for YLL
-
 ```{r}
-# deaths and diabetes from GBD (DK + T2D)
+# Deaths and YLL from GBD for Denmark, type 2 diabetes
 deaths_f <- 566.89
 deaths_m <- 715.34
 
 yll_f <- 7837.82
 yll_m <- 12702.54
 
-# calculating standard expected years of life lost
+# Standard expected years of life lost per death
 seyll_f <- yll_f / deaths_f
 seyll_m <- yll_m / deaths_m
 
-# adding to dataframe
 df <- df %>%
   mutate(
     deaths = case_when(
       str_detect(group, "^Female") ~ deaths_f,
-      str_detect(group, "^Male")   ~ deaths_m,
+      str_detect(group, "^Male") ~ deaths_m,
       TRUE ~ NA_real_
     ),
     seyll = case_when(
       str_detect(group, "^Female") ~ seyll_f,
-      str_detect(group, "^Male")   ~ seyll_m,
+      str_detect(group, "^Male") ~ seyll_m,
       TRUE ~ NA_real_
     )
   )
 ```
-
-## Disability weight inputs
 
 ```{r}
 # Uncomplicated diabetes mellitus type 2
@@ -168,8 +118,6 @@ DW_min  <- 0.0311213425
 DW_max  <- 0.072092547
 ```
 
-## Helper functions
-
 ```{r}
 # PERT distribution for disability weight uncertainty
 rpert <- function(n, min, mode, max) {
@@ -177,27 +125,29 @@ rpert <- function(n, min, mode, max) {
   beta  <- 1 + 4 * (max - mode) / (max - min)
   min + rbeta(n, alpha, beta) * (max - min)
 }
-
 ```
-
-## Monte Carlo
 
 ```{r}
 run_mc_row_daly_korea <- function(i_diabetes, meanlog_dk, sdlog_dk, lod_dk,
                                   D_years, deaths, seyll,
                                   DW_min, DW_mode, DW_max,
-                                  beta_hat, beta_se, x_ref, dose_t3,
+                                  OR_t2, OR_t3, se_t2, se_t3,
+                                  cut1, cut2,
                                   nsim = 10000,
                                   baseline_uncertainty = FALSE) {
 
-  # generating Danish exposures
+  # Simulate Danish BPS exposure
   X <- rlnorm(nsim, meanlog = meanlog_dk, sdlog = sdlog_dk)
-  # keep only detectable values
+
+  # Restrict to detectable values
   X_det <- X[X > lod_dk]
 
   if (length(X_det) < 10) {
     return(tibble(
       p_detectable = NA_real_,
+      p_t1 = NA_real_,
+      p_t2 = NA_real_,
+      p_t3 = NA_real_,
       PAF = NA_real_,
       AC = NA_real_,
       AD = NA_real_,
@@ -206,43 +156,58 @@ run_mc_row_daly_korea <- function(i_diabetes, meanlog_dk, sdlog_dk, lod_dk,
       DALY = NA_real_
     ))
   }
-  
-  # detectable fraction
+
+  # Proportion detectable in the full Danish population
   p_detectable <- mean(X > lod_dk)
 
-  beta <- rnorm(1, mean = beta_hat, sd = beta_se)
-  beta <- max(0, beta)
+  # Classify detectable Danish exposures using Korean tertile cutpoints
+  grp <- case_when(
+    X_det <= cut1 ~ "T1",
+    X_det <= cut2 ~ "T2",
+    TRUE ~ "T3"
+  )
 
-  # Cap exposure at Korean top tertile median
-  X_det_bounded <- pmin(X_det, dose_t3)
+  p1 <- mean(grp == "T1")
+  p2 <- mean(grp == "T2")
+  p3 <- mean(grp == "T3")
 
-  # compute exposure-speficic RR
-  rr_x <- exp(beta * (X_det_bounded - x_ref))
-  rr_x[rr_x < 1] <- 1
+  # Sample OR uncertainty from the reported 95% CI
+  rr2 <- exp(rnorm(1, mean = log(OR_t2), sd = se_t2))
+  rr3 <- exp(rnorm(1, mean = log(OR_t3), sd = se_t3))
 
-  # compute detectable only PAF
-  PAF_det <- (mean(rr_x) - 1) / mean(rr_x)
-  # scale to population
+  # Detectable-only categorical PAF
+  PAF_det <- (p1 * (1 - 1) + p2 * (rr2 - 1) + p3 * (rr3 - 1)) /
+             (p1 * 1 + p2 * rr2 + p3 * rr3)
+
+  # Scale by the detectable fraction
   PAF <- p_detectable * PAF_det
 
+  # Baseline incident diabetes cases
   base_cases <- if (baseline_uncertainty) {
     rpois(1, lambda = i_diabetes)
   } else {
     i_diabetes
   }
 
+  # Attributable cases
   AC <- PAF * base_cases
 
-  DW <- rpert(1, DW_min, DW_mode, DW_max)
+  # YLD
+  DW  <- rpert(1, DW_min, DW_mode, DW_max)
   YLD <- AC * D_years * DW
 
-  AD <- PAF * deaths
+  # YLL
+  AD  <- PAF * deaths
   YLL <- AD * seyll
 
+  # DALY
   DALY <- YLD + YLL
 
   tibble(
     p_detectable = p_detectable,
+    p_t1 = p1,
+    p_t2 = p2,
+    p_t3 = p3,
     PAF = PAF,
     AC = AC,
     AD = AD,
@@ -257,7 +222,8 @@ run_mc_row_daly_korea <- function(i_diabetes, meanlog_dk, sdlog_dk, lod_dk,
 run_mc_summary_daly_korea <- function(i_diabetes, meanlog_dk, sdlog_dk, lod_dk,
                                       D_years, deaths, seyll,
                                       DW_min, DW_mode, DW_max,
-                                      beta_hat, beta_se, x_ref, dose_t3,
+                                      OR_t2, OR_t3, se_t2, se_t3,
+                                      cut1, cut2,
                                       nsim_outer = 3000,
                                       baseline_uncertainty = FALSE) {
 
@@ -272,34 +238,45 @@ run_mc_summary_daly_korea <- function(i_diabetes, meanlog_dk, sdlog_dk, lod_dk,
     DW_min = DW_min,
     DW_mode = DW_mode,
     DW_max = DW_max,
-    beta_hat = beta_hat,
-    beta_se = beta_se,
-    x_ref = x_ref,
-    dose_t3 = dose_t3,
+    OR_t2 = OR_t2,
+    OR_t3 = OR_t3,
+    se_t2 = se_t2,
+    se_t3 = se_t3,
+    cut1 = cut1,
+    cut2 = cut2,
     nsim = 10000,
     baseline_uncertainty = baseline_uncertainty
   ))
 
   tibble(
     p_detectable_med = median(sims$p_detectable, na.rm = TRUE),
+    p_t1_med = median(sims$p_t1, na.rm = TRUE),
+    p_t2_med = median(sims$p_t2, na.rm = TRUE),
+    p_t3_med = median(sims$p_t3, na.rm = TRUE),
+
     PAF_med = median(sims$PAF, na.rm = TRUE),
-    PAF_lo = quantile(sims$PAF, 0.025, na.rm = TRUE),
-    PAF_hi = quantile(sims$PAF, 0.975, na.rm = TRUE),
+    PAF_lo  = quantile(sims$PAF, 0.025, na.rm = TRUE),
+    PAF_hi  = quantile(sims$PAF, 0.975, na.rm = TRUE),
+
     AC_med = median(sims$AC, na.rm = TRUE),
-    AC_lo = quantile(sims$AC, 0.025, na.rm = TRUE),
-    AC_hi = quantile(sims$AC, 0.975, na.rm = TRUE),
+    AC_lo  = quantile(sims$AC, 0.025, na.rm = TRUE),
+    AC_hi  = quantile(sims$AC, 0.975, na.rm = TRUE),
+
     AD_med = median(sims$AD, na.rm = TRUE),
-    AD_lo = quantile(sims$AD, 0.025, na.rm = TRUE),
-    AD_hi = quantile(sims$AD, 0.975, na.rm = TRUE),
+    AD_lo  = quantile(sims$AD, 0.025, na.rm = TRUE),
+    AD_hi  = quantile(sims$AD, 0.975, na.rm = TRUE),
+
     YLD_med = median(sims$YLD, na.rm = TRUE),
-    YLD_lo = quantile(sims$YLD, 0.025, na.rm = TRUE),
-    YLD_hi = quantile(sims$YLD, 0.975, na.rm = TRUE),
+    YLD_lo  = quantile(sims$YLD, 0.025, na.rm = TRUE),
+    YLD_hi  = quantile(sims$YLD, 0.975, na.rm = TRUE),
+
     YLL_med = median(sims$YLL, na.rm = TRUE),
-    YLL_lo = quantile(sims$YLL, 0.025, na.rm = TRUE),
-    YLL_hi = quantile(sims$YLL, 0.975, na.rm = TRUE),
+    YLL_lo  = quantile(sims$YLL, 0.025, na.rm = TRUE),
+    YLL_hi  = quantile(sims$YLL, 0.975, na.rm = TRUE),
+
     DALY_med = median(sims$DALY, na.rm = TRUE),
-    DALY_lo = quantile(sims$DALY, 0.025, na.rm = TRUE),
-    DALY_hi = quantile(sims$DALY, 0.975, na.rm = TRUE)
+    DALY_lo  = quantile(sims$DALY, 0.025, na.rm = TRUE),
+    DALY_hi  = quantile(sims$DALY, 0.975, na.rm = TRUE)
   )
 }
 ```
@@ -320,10 +297,12 @@ results_daly_korea <- df %>%
         DW_min = DW_min,
         DW_mode = DW_mode,
         DW_max = DW_max,
-        beta_hat = beta_hat,
-        beta_se = beta_se,
-        x_ref = x_ref,
-        dose_t3 = dose_t3,
+        OR_t2 = OR_t2,
+        OR_t3 = OR_t3,
+        se_t2 = se_t2,
+        se_t3 = se_t3,
+        cut1 = cut1,
+        cut2 = cut2,
         nsim_outer = 3000,
         baseline_uncertainty = FALSE
       )
@@ -335,6 +314,6 @@ results_daly_korea
 ```
 
 ```{r}
-print(cut1)
-print(cut2)
+cut1
+cut2
 ```
