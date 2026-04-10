@@ -136,6 +136,9 @@ ggplot() +
   geom_point(data = study_dat, aes(x = dose, y = logrr), size = 3) +
   labs(x = "BPS concentration", y = "log(RR)") +
   theme_minimal()
+
+# underestimation of t2?
+# overestimating t3?
 ```
 
 ## Duration inputs for YLD
