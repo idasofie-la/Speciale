@@ -364,7 +364,7 @@ results_daly_korea_simple
 
 ```{r}
 getwd()
-#write_xlsx(results_daly_korea, "results_diabetes_korea.xlsx")
+write_xlsx(results_daly_korea, "results_diabetes_korea.xlsx")
 ```
 
 ## Checking percentiles
