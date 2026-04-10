@@ -119,6 +119,25 @@ summary(fit_lin)
 study_dat
 ```
 
+```{r}
+pred_grid <- tibble(
+  dose = seq(min(study_dat$dose), max(study_dat$dose), length.out = 100)
+) %>%
+  mutate(
+    dose_c = dose - dose_t1
+  ) %>%
+  mutate(
+    logrr_fit = predict(fit_lin, newdata = .)
+  )
+
+# plot
+ggplot() +
+  geom_line(data = pred_grid, aes(x = dose, y = logrr_fit)) +
+  geom_point(data = study_dat, aes(x = dose, y = logrr), size = 3) +
+  labs(x = "BPS concentration", y = "log(RR)") +
+  theme_minimal()
+```
+
 ## Duration inputs for YLD
 
 ```{r}
