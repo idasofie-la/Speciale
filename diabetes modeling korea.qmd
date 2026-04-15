@@ -16,6 +16,8 @@ library(writexl)
 ## Importing data
 
 ```{r}
+set.seed(123)
+
 # loading danish inputs, sex, LOD, BPS percentiles & diabetes incidence
 # maybe name it better :-)
 # doing lognormal distribution to the danish percentiles
@@ -67,7 +69,7 @@ meanlog_kor <- unname(fit_kor["meanlog"])
 sdlog_kor   <- unname(fit_kor["sdlog"])
 
 # Simulate Korean detectable exposure distribution
-set.seed(123)
+# If detectable Korean BPS is lognormal, what concentrations are typical in tertiles 1, 2, and 3?
 x_kor <- rlnorm(1e6, meanlog = meanlog_kor, sdlog = sdlog_kor)
 
 # Tertile cutpoints among detectable Korean values
@@ -76,7 +78,7 @@ cut2 <- qlnorm(2/3, meanlog = meanlog_kor, sdlog = sdlog_kor)
 
 # Medians within each tertile
 # finding the typical dose within the tertile
-# cuts represent the boundaries
+# cuts represent the boundaries between the tertiles
 dose_t1 <- median(x_kor[x_kor <= cut1])
 dose_t2 <- median(x_kor[x_kor > cut1 & x_kor <= cut2])
 dose_t3 <- median(x_kor[x_kor > cut2])
@@ -98,12 +100,12 @@ study_dat <- tibble(
 
 # fitting linear model, trying to finde the slope beta of the best straight line
 # lm(logrr ~ 0 + dose_c) fits the line without an intercept to force it through (0,0) 
-# this means dose_c = 0, logrr = 0 which makes 1 at reference dose
-# data = study_dat[-1, ], uses just tertile 2 and 3 (removes the first row) because tertile 1 is reference
+# this means dose_c = 0, logrr = 0 which makes 1 at reference dose (RR = e^logrr = 1, where logrr = 0)
+# data = study_dat[2:3, ], uses just tertile 2 and 3 (removes the first row) because tertile 1 is reference
 
 fit_lin <- lm(logrr ~ 0 + dose_c,
               data = study_dat[2:3, ],
-              weights = 1 / study_dat$se[2:3]^2) #smaller SE -> larger weight -> more influence
+              weights = 1 / study_dat$se[2:3]^2) # smaller SE -> larger weight -> more influence
 
 # estimated slope of line + uncertainty of the estimated slope
 beta_hat <- unname(coef(fit_lin)["dose_c"])
@@ -120,6 +122,7 @@ study_dat
 ```
 
 ```{r}
+# making a sequence of dose values for plotting
 pred_grid <- tibble(
   dose = seq(min(study_dat$dose), max(study_dat$dose), length.out = 100)
 ) %>%
@@ -131,14 +134,26 @@ pred_grid <- tibble(
   )
 
 # plot
-ggplot() +
+p_logrr <- ggplot() +
   geom_line(data = pred_grid, aes(x = dose, y = logrr_fit)) +
   geom_point(data = study_dat, aes(x = dose, y = logrr), size = 3) +
   labs(x = "BPS concentration", y = "log(RR)") +
   theme_minimal()
 
+p_logrr
+
 # underestimation of t2?
 # overestimating t3?
+
+
+# svaing plot
+ggsave(
+  filename = "logrr_linear_model_korea.png",
+  plot = p_logrr,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
 ```
 
 ## Duration inputs for YLD
@@ -218,7 +233,7 @@ rpert <- function(n, min, mode, max) {
 
 ```
 
-## Monte Carlo 
+## Monte Carlo
 
 ```{r}
 run_mc_row_daly_korea_simple <- function(
@@ -231,18 +246,20 @@ run_mc_row_daly_korea_simple <- function(
 
 
   # uncertainty in slope
-  # draw one possible value of the dose-response slope from a normal distribution centered at the estimated slope
+  # draw one possible value of the dose-response slope from a normal distribution centered at the estimated slope, slightly different dose-repsonse slope every timr
   beta <- rnorm(1, mean = beta_hat, sd = beta_se)
 
   # RR at average detectable Danish exposure, calculate the RR for a person whose exposure is the average detectable Danish exposure
   # Danish detectable average exposure - Korean reference dose
   # log(RR) = beta * (dose - reference dose)
+  # should maybe rename to rr_median
   rr_mean <- exp(beta * (median_dk - x_ref))
 
   # PAF among detectable
   PAF_det <- (rr_mean - 1) / rr_mean
 
   # scale to full population but stick to the fraction of detectable BPS in population
+  # is this wrong?
   PAF <- p_detectable_dk * PAF_det
 
   base_cases <- if (baseline_uncertainty) {
@@ -364,7 +381,7 @@ results_daly_korea_simple
 
 ```{r}
 getwd()
-write_xlsx(results_daly_korea, "results_diabetes_korea.xlsx")
+write_xlsx(results_daly_korea_simple, "results_diabetes_korea.xlsx")
 ```
 
 ## Checking percentiles
@@ -409,6 +426,8 @@ compare_kor
 ```{r}
 beta_hat
 x_ref
+
+# calculating rr at at median for each sex
 df %>%
   mutate(rr_at_median = exp(beta_hat * (median_dk - x_ref))) %>%
   select(group, median_dk, rr_at_median)
