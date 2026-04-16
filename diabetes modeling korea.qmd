@@ -2,6 +2,7 @@
 title: "diabetes_modeling_korea"
 format: html
 editor: visual
+output-file: html
 ---
 
 ### Libraries
@@ -381,7 +382,7 @@ results_daly_korea_simple
 
 ```{r}
 getwd()
-write_xlsx(results_daly_korea_simple, "results_diabetes_korea.xlsx")
+write_xlsx(results_daly_korea_simple, "results_diabetes_korea_simple.xlsx")
 ```
 
 ## Checking percentiles
