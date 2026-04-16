@@ -17,12 +17,9 @@ library(writexl)
 ## Importing data
 
 ```{r}
-set.seed(123)
-
 # loading danish inputs, sex, LOD, BPS percentiles & diabetes incidence
-# maybe name it better :-)
 # doing lognormal distribution to the danish percentiles
-df <- read_excel("diabetes work china-kopi.xlsx") %>%
+df <- read_excel("diabetes korea (GBD).xlsx") %>%
   mutate(
     meanlog_dk = log(p_50),
     sdlog_dk   = (log(p_75) - log(p_25)) / (qnorm(0.75) - qnorm(0.25)),
@@ -71,6 +68,7 @@ sdlog_kor   <- unname(fit_kor["sdlog"])
 
 # Simulate Korean detectable exposure distribution
 # If detectable Korean BPS is lognormal, what concentrations are typical in tertiles 1, 2, and 3?
+set.seed(123)
 x_kor <- rlnorm(1e6, meanlog = meanlog_kor, sdlog = sdlog_kor)
 
 # Tertile cutpoints among detectable Korean values
@@ -80,9 +78,14 @@ cut2 <- qlnorm(2/3, meanlog = meanlog_kor, sdlog = sdlog_kor)
 # Medians within each tertile
 # finding the typical dose within the tertile
 # cuts represent the boundaries between the tertiles
-dose_t1 <- median(x_kor[x_kor <= cut1])
-dose_t2 <- median(x_kor[x_kor > cut1 & x_kor <= cut2])
-dose_t3 <- median(x_kor[x_kor > cut2])
+# dose_t1 <- median(x_kor[x_kor <= cut1])
+# dose_t2 <- median(x_kor[x_kor > cut1 & x_kor <= cut2])
+# dose_t3 <- median(x_kor[x_kor > cut2])
+
+# trying with mean
+dose_t1 <- mean(x_kor[x_kor <= cut1])
+dose_t2 <- mean(x_kor[x_kor > cut1 & x_kor <= cut2])
+dose_t3 <- mean(x_kor[x_kor > cut2])
 
 
 ## Build dose-response dataset and fit linear trend ##
@@ -107,6 +110,14 @@ study_dat <- tibble(
 fit_lin <- lm(logrr ~ 0 + dose_c,
               data = study_dat[2:3, ],
               weights = 1 / study_dat$se[2:3]^2) # smaller SE -> larger weight -> more influence
+
+### SPLINE ###
+study_dat2 <- study_dat %>%
+  mutate(w = c(1e6, 1/se_t2^2, 1/se_t3^2))
+
+fit_quad <- lm(logrr ~ 0 + dose_c + I(dose_c^2),
+               data = study_dat2,
+               weights = w)
 
 # estimated slope of line + uncertainty of the estimated slope
 beta_hat <- unname(coef(fit_lin)["dose_c"])
@@ -155,6 +166,24 @@ ggsave(
   height = 5,
   dpi = 300
 )
+```
+
+```{r}
+pred_grid <- tibble(
+  dose = seq(min(study_dat2$dose), max(study_dat2$dose), length.out = 100)
+)
+
+pred_grid$dose_c <- pred_grid$dose - dose_t1
+
+pred_grid$logrr_fit <- predict(fit_quad, newdata = pred_grid)
+
+p_logrr_quad <- ggplot() +
+  geom_line(data = pred_grid, aes(x = dose, y = logrr_fit)) +
+  geom_point(data = study_dat2, aes(x = dose, y = logrr), size = 3) +
+  labs(x = "BPS concentration", y = "log(RR)") +
+  theme_minimal()
+
+p_logrr_quad
 ```
 
 ## Duration inputs for YLD
@@ -217,9 +246,26 @@ df <- df %>%
 
 ```{r}
 # Uncomplicated diabetes mellitus type 2
-DW_mode <- 0.049011415
-DW_min  <- 0.0311213425
-DW_max  <- 0.072092547
+# DW_mode <- 0.049011415
+# DW_min  <- 0.0311213425
+# DW_max  <- 0.072092547
+
+# downloaded from GBD
+YLD_total <- 13225.904475796962 + 8355.60842682979
+YLD_lower_total <- 8916.644865520693 + 5617.300593266269
+YLD_upper_total <- 17957.837169143662 + 11465.14910195645
+
+prev_total <- 194510.88289338743 + 122399.73795153094
+prev_lower_total <- 169049.8026957066 + 111088.08159363415
+prev_upper_total <- 211790.44277738212 + 134597.21198640313
+
+DW_mode <- YLD_total / prev_total
+DW_min <- YLD_lower_total / prev_upper_total
+DW_max <- YLD_upper_total / prev_lower_total
+
+DW_mode
+DW_min
+DW_max
 ```
 
 ## Helper functions
@@ -256,12 +302,8 @@ run_mc_row_daly_korea_simple <- function(
   # should maybe rename to rr_median
   rr_mean <- exp(beta * (median_dk - x_ref))
 
-  # PAF among detectable
-  PAF_det <- (rr_mean - 1) / rr_mean
-
-  # scale to full population but stick to the fraction of detectable BPS in population
-  # is this wrong?
-  PAF <- p_detectable_dk * PAF_det
+  # PAF for only detectable population
+  PAF <- (p_detectable_dk * (rr_mean - 1)) / (1 + p_detectable_dk * (rr_mean - 1))
 
   base_cases <- if (baseline_uncertainty) {
     rpois(1, lambda = i_diabetes)
@@ -431,8 +473,15 @@ x_ref
 # calculating rr at at median for each sex
 df %>%
   mutate(rr_at_median = exp(beta_hat * (median_dk - x_ref))) %>%
-  select(group, median_dk, rr_at_median)
+  dplyr::select(group, median_dk, rr_at_median)
 
 # is beta too steep?
 # rr is high
+```
+
+```{r}
+dose_t1
+dose_t2
+dose_t3
+unique(df$median_dk)
 ```

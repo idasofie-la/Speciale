@@ -1,0 +1,378 @@
+---
+title: "diabetes modeling korea spline"
+format: html
+editor: visual
+---
+
+## Libraries
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(rriskDistributions)
+library(writexl)
+library(MASS)
+```
+
+## Importing data
+
+```{r}
+set.seed(123)
+
+# loading danish inputs, sex, LOD, BPS percentiles & diabetes incidence
+df <- read_excel("diabetes korea (GBD).xlsx") %>%
+  mutate(
+    meanlog_dk = log(p_50),
+    sdlog_dk = (log(p_75) - log(p_25)) / (qnorm(0.75) - qnorm(0.25)),
+
+    # expected fraction of population above LOD
+    p_detectable_dk = 1 - plnorm(LOD, meanlog_dk, sdlog_dk),
+
+    # arithmetic mean exposure
+    mean_exp_dk = exp(meanlog_dk + 0.5 * sdlog_dk^2),
+
+    # median exposure
+    median_dk = p_50
+  )
+```
+
+## Korean study inputs, BPS and diabetes
+
+```{r}
+# Supplementary Table S6: DM ORs among participants with BPS > LOD
+OR_t2  <- 1.73
+LCL_t2 <- 1.00
+UCL_t2 <- 2.98
+
+OR_t3  <- 2.13
+LCL_t3 <- 1.29
+UCL_t3 <- 3.50
+
+# Convert 95% CI to log-scale SE
+se_t2 <- (log(UCL_t2) - log(LCL_t2)) / (2 * 1.96)
+se_t3 <- (log(UCL_t3) - log(LCL_t3)) / (2 * 1.96)
+```
+
+## Build dose-response dataset
+
+```{r}
+study_dat <- tibble(
+  dose   = c(dose_t1, dose_t2, dose_t3),
+  dose_c = c(dose_t1, dose_t2, dose_t3) - dose_t1,
+  logrr  = log(c(1, OR_t2, OR_t3)),
+  se     = c(NA, se_t2, se_t3)
+)
+
+study_dat
+```
+
+## Fit quadratic model
+
+```{r}
+# Give the reference point a very large weight so the curve stays anchored at (dose_c = 0, logrr = 0)
+study_dat2 <- study_dat %>%
+  mutate(w = c(1e6, 1 / se_t2^2, 1 / se_t3^2))
+
+fit_quad <- lm(
+  logrr ~ 0 + dose_c + I(dose_c^2),
+  data = study_dat2,
+  weights = w
+)
+
+summary(fit_quad)
+
+coef_quad <- coef(fit_quad)
+vcov_quad <- vcov(fit_quad)
+
+coef_quad
+vcov_quad
+```
+
+## Plot quadratic fit
+
+```{r}
+pred_grid_quad <- tibble(
+  dose = seq(min(study_dat2$dose), max(study_dat2$dose), length.out = 100)
+)
+
+pred_grid_quad$dose_c <- pred_grid_quad$dose - dose_t1
+pred_grid_quad$logrr_fit <- predict(fit_quad, newdata = pred_grid_quad)
+
+p_logrr_quad <- ggplot() +
+  geom_line(data = pred_grid_quad, aes(x = dose, y = logrr_fit)) +
+  geom_point(data = study_dat2, aes(x = dose, y = logrr), size = 3) +
+  labs(x = "BPS concentration", y = "log(RR)") +
+  theme_minimal()
+
+p_logrr_quad
+
+ggsave(
+  filename = "logrr_quadratic_model_korea.png",
+  plot = p_logrr_quad,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
+```
+
+## Inputs for YLD
+
+```{r}
+# Median age at onset of type 2 diabetes in DK
+age_m <- 62.1
+age_f <- 64.6
+
+# Life expectancy in DK
+life_m <- 78.8
+life_f <- 82.8
+
+# estimating duration
+D_m <- life_m - age_m
+D_f <- life_f - age_f
+
+df <- df %>%
+  mutate(
+    D_years = case_when(
+      str_detect(group, "^Male")   ~ D_m,
+      str_detect(group, "^Female") ~ D_f,
+      TRUE ~ NA_real_
+    )
+  )
+```
+
+## Inputs for YLL
+
+```{r}
+# deaths and YLL from GBD (DK + T2D)
+deaths_f <- 566.89
+deaths_m <- 715.34
+yll_f    <- 7837.82
+yll_m    <- 12702.54
+
+# standard expected years of life lost
+seyll_f <- yll_f / deaths_f
+seyll_m <- yll_m / deaths_m
+
+df <- df %>%
+  mutate(
+    deaths = case_when(
+      str_detect(group, "^Female") ~ deaths_f,
+      str_detect(group, "^Male")   ~ deaths_m,
+      TRUE ~ NA_real_
+    ),
+    seyll = case_when(
+      str_detect(group, "^Female") ~ seyll_f,
+      str_detect(group, "^Male")   ~ seyll_m,
+      TRUE ~ NA_real_
+    )
+  )
+```
+
+## Disability weight inputs 
+
+```{r}
+# downloaded from GBD
+YLD_total       <- 13225.904475796962 + 8355.60842682979
+YLD_lower_total <-  8916.644865520693 + 5617.300593266269
+YLD_upper_total <- 17957.837169143662 + 11465.14910195645
+
+prev_total       <- 194510.88289338743 + 122399.73795153094
+prev_lower_total <- 169049.8026957066  + 111088.08159363415
+prev_upper_total <- 211790.44277738212 + 134597.21198640313
+
+DW_mode <- YLD_total / prev_total
+DW_min  <- YLD_lower_total / prev_upper_total
+DW_max  <- YLD_upper_total / prev_lower_total
+
+DW_mode
+DW_min
+DW_max
+```
+
+## Helper functions
+
+```{r}
+# PERT distribution for disability weight uncertainty
+rpert <- function(n, min, mode, max) {
+  alpha <- 1 + 4 * (mode - min) / (max - min)
+  beta  <- 1 + 4 * (max - mode) / (max - min)
+  min + rbeta(n, alpha, beta) * (max - min)
+}
+```
+
+## Monte Carlo
+
+```{r}
+run_mc_row_daly_korea_quad <- function(
+  i_diabetes,
+  median_dk,
+  p_detectable_dk,
+  D_years,
+  deaths,
+  seyll,
+  DW_min,
+  DW_mode,
+  DW_max,
+  coef_quad,
+  vcov_quad,
+  dose_t1,
+  baseline_uncertainty = FALSE
+) {
+
+  # draw one possible set of quadratic coefficients
+  beta_draw <- MASS::mvrnorm(1, mu = coef_quad, Sigma = vcov_quad)
+
+  b1 <- beta_draw[1]
+  b2 <- beta_draw[2]
+
+  # centered Danish exposure
+  dose_c_dk <- median_dk - dose_t1
+
+  # predicted log(RR) from quadratic model
+  logrr_mean <- b1 * dose_c_dk + b2 * dose_c_dk^2
+
+  # convert to RR
+  rr_mean <- exp(logrr_mean)
+
+  # population attributable fraction
+  PAF <- (p_detectable_dk * (rr_mean - 1)) / (1 + p_detectable_dk * (rr_mean - 1))
+
+  base_cases <- if (baseline_uncertainty) {
+    rpois(1, lambda = i_diabetes)
+  } else {
+    i_diabetes
+  }
+
+  AC <- PAF * base_cases
+  DW <- rpert(1, DW_min, DW_mode, DW_max)
+  YLD <- AC * D_years * DW
+  AD <- PAF * deaths
+  YLL <- AD * seyll
+  DALY <- YLD + YLL
+
+  tibble(
+    PAF = PAF,
+    AC = AC,
+    AD = AD,
+    YLD = YLD,
+    YLL = YLL,
+    DALY = DALY
+  )
+}
+```
+
+## Monte Carlo summary function
+
+```{r}
+run_mc_summary_daly_korea_quad <- function(
+  i_diabetes,
+  median_dk,
+  p_detectable_dk,
+  D_years,
+  deaths,
+  seyll,
+  DW_min,
+  DW_mode,
+  DW_max,
+  coef_quad,
+  vcov_quad,
+  dose_t1,
+  nsim_outer = 3000,
+  baseline_uncertainty = FALSE
+) {
+
+  sims <- map_dfr(seq_len(nsim_outer), ~ run_mc_row_daly_korea_quad(
+    i_diabetes = i_diabetes,
+    median_dk = median_dk,
+    p_detectable_dk = p_detectable_dk,
+    D_years = D_years,
+    deaths = deaths,
+    seyll = seyll,
+    DW_min = DW_min,
+    DW_mode = DW_mode,
+    DW_max = DW_max,
+    coef_quad = coef_quad,
+    vcov_quad = vcov_quad,
+    dose_t1 = dose_t1,
+    baseline_uncertainty = baseline_uncertainty
+  ))
+
+  tibble(
+    PAF_med = median(sims$PAF, na.rm = TRUE),
+    PAF_lo  = quantile(sims$PAF, 0.025, na.rm = TRUE),
+    PAF_hi  = quantile(sims$PAF, 0.975, na.rm = TRUE),
+
+    AC_med = median(sims$AC, na.rm = TRUE),
+    AC_lo  = quantile(sims$AC, 0.025, na.rm = TRUE),
+    AC_hi  = quantile(sims$AC, 0.975, na.rm = TRUE),
+
+    AD_med = median(sims$AD, na.rm = TRUE),
+    AD_lo  = quantile(sims$AD, 0.025, na.rm = TRUE),
+    AD_hi  = quantile(sims$AD, 0.975, na.rm = TRUE),
+
+    YLD_med = median(sims$YLD, na.rm = TRUE),
+    YLD_lo  = quantile(sims$YLD, 0.025, na.rm = TRUE),
+    YLD_hi  = quantile(sims$YLD, 0.975, na.rm = TRUE),
+
+    YLL_med = median(sims$YLL, na.rm = TRUE),
+    YLL_lo  = quantile(sims$YLL, 0.025, na.rm = TRUE),
+    YLL_hi  = quantile(sims$YLL, 0.975, na.rm = TRUE),
+
+    DALY_med = median(sims$DALY, na.rm = TRUE),
+    DALY_lo  = quantile(sims$DALY, 0.025, na.rm = TRUE),
+    DALY_hi  = quantile(sims$DALY, 0.975, na.rm = TRUE)
+  )
+}
+```
+
+## Run Monte Carlo
+
+```{r}
+results_daly_korea_quad <- df %>%
+  mutate(
+    mc = pmap(
+      list(i_diabetes, median_dk, p_detectable_dk, D_years, deaths, seyll),
+      ~ run_mc_summary_daly_korea_quad(
+        i_diabetes = ..1,
+        median_dk = ..2,
+        p_detectable_dk = ..3,
+        D_years = ..4,
+        deaths = ..5,
+        seyll = ..6,
+        DW_min = DW_min,
+        DW_mode = DW_mode,
+        DW_max = DW_max,
+        coef_quad = coef_quad,
+        vcov_quad = vcov_quad,
+        dose_t1 = dose_t1,
+        nsim_outer = 3000,
+        baseline_uncertainty = FALSE
+      )
+    )
+  ) %>%
+  unnest(mc)
+
+results_daly_korea_quad
+```
+
+## check ?
+
+```{r}
+study_dat2
+coef_quad
+
+pred_grid_check <- tibble(
+  dose = seq(min(study_dat2$dose), max(df$median_dk), length.out = 200)
+)
+
+pred_grid_check$dose_c <- pred_grid_check$dose - dose_t1
+pred_grid_check$logrr_fit <- predict(fit_quad, newdata = pred_grid_check)
+pred_grid_check$rr_fit <- exp(pred_grid_check$logrr_fit)
+
+ggplot(pred_grid_check, aes(x = dose, y = rr_fit)) +
+  geom_line() +
+  geom_point(data = study_dat2, aes(x = dose, y = exp(logrr)), size = 3) +
+  geom_vline(xintercept = unique(df$median_dk), linetype = "dashed") +
+  labs(x = "BPS concentration", y = "RR") +
+  theme_minimal()
+```
