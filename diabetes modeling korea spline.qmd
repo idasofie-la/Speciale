@@ -53,6 +53,33 @@ se_t2 <- (log(UCL_t2) - log(LCL_t2)) / (2 * 1.96)
 se_t3 <- (log(UCL_t3) - log(LCL_t3)) / (2 * 1.96)
 ```
 
+## Korean detectable BPS distribution
+
+```{r}
+# Supplementary Table S1: detectable BPS distribution (> LOD)
+fit_kor <- get.lnorm.par(
+  p = c(0.25, 0.50, 0.75),
+  q = c(0.029, 0.049, 0.104),
+  show.output = FALSE,
+  plot = TRUE
+)
+
+meanlog_kor <- unname(fit_kor["meanlog"])
+sdlog_kor   <- unname(fit_kor["sdlog"])
+
+# Simulate Korean detectable exposure distribution
+x_kor <- rlnorm(1e6, meanlog = meanlog_kor, sdlog = sdlog_kor)
+
+# Tertile cutpoints among detectable Korean values
+cut1 <- qlnorm(1/3, meanlog = meanlog_kor, sdlog = sdlog_kor)
+cut2 <- qlnorm(2/3, meanlog = meanlog_kor, sdlog = sdlog_kor)
+
+# Median dose within each tertile
+dose_t1 <- mean(x_kor[x_kor <= cut1])
+dose_t2 <- mean(x_kor[x_kor > cut1 & x_kor <= cut2])
+dose_t3 <- mean(x_kor[x_kor > cut2])
+```
+
 ## Build dose-response dataset
 
 ```{r}
