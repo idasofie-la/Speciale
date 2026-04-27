@@ -149,7 +149,7 @@ pred_grid <- tibble(
 p_logrr <- ggplot() +
   geom_line(data = pred_grid, aes(x = dose, y = logrr_fit)) +
   geom_point(data = study_dat, aes(x = dose, y = logrr), size = 3) +
-  labs(x = "BPS concentration", y = "log(RR)") +
+  labs(x = "BPS concentration", y = "log(OR)") +
   theme_minimal()
 
 p_logrr
@@ -193,9 +193,9 @@ p_logrr_quad
 age_m <- 62.1
 age_f <- 64.6
 
-# Life expectancy in DK
-life_m <- 78.8
-life_f <- 82.8
+# Life expectancy in DK in 2023
+life_m <- 79.9
+life_f <- 83.7
 
 # estimating the duration
 D_m <- life_m - age_m
@@ -215,12 +215,12 @@ df <- df %>%
 ## Inputs for YLL
 
 ```{r}
-# deaths and diabetes from GBD (DK + T2D)
-deaths_f <- 566.89
-deaths_m <- 715.34
+# deaths and diabetes from GBD (DK + T2D) (2023)
+deaths_f <- 599.79
+deaths_m <- 783.06
 
-yll_f <- 7837.82
-yll_m <- 12702.54
+yll_f <- 7896.75
+yll_m <- 12928.04
 
 # calculating standard expected years of life lost
 seyll_f <- yll_f / deaths_f
@@ -300,10 +300,10 @@ run_mc_row_daly_korea_simple <- function(
   # Danish detectable average exposure - Korean reference dose
   # log(RR) = beta * (dose - reference dose)
   # should maybe rename to rr_median
-  rr_mean <- exp(beta * (median_dk - x_ref))
+  rr_median <- exp(beta * (median_dk - x_ref))
 
   # PAF for only detectable population
-  PAF <- (p_detectable_dk * (rr_mean - 1)) / (1 + p_detectable_dk * (rr_mean - 1))
+  PAF <- (p_detectable_dk * (rr_median - 1)) / (1 + p_detectable_dk * (rr_median - 1))
 
   base_cases <- if (baseline_uncertainty) {
     rpois(1, lambda = i_diabetes)
@@ -480,8 +480,14 @@ df %>%
 ```
 
 ```{r}
+# checks
+
 dose_t1
 dose_t2
 dose_t3
 unique(df$median_dk)
+unique(df$mean_exp_dk)
+
+
+
 ```

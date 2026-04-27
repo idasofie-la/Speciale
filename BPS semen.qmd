@@ -1,0 +1,385 @@
+---
+title: "BPS"
+format: html
+editor: visual
+---
+
+## Loading libraries
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(rriskDistributions)
+library(writexl)
+```
+
+## Calculating the Danish baseline for sperm motility
+
+```{r}
+#getwd()
+
+data_app <- read_csv("DATAapplicants.csv")
+data_donor <- read_csv("DATAdonors.csv")
+
+data_donor_first <- data_donor %>%
+  arrange(DonorID, EjacYR, EjacMO, EjacDAY) %>%  # ensures chronological within donor
+  group_by(DonorID) %>%
+  slice(1) %>%                                   # first donation
+  ungroup()
+
+# Function to calculate 32% motility
+compute_p0 <- function(df, thr = 32) {
+  df2 <- df %>%
+    mutate(
+      prog_motility_pct = 100 * (GDaConc + GDbConc) / TSconc
+    ) %>%
+    filter(
+      is.finite(prog_motility_pct),
+      prog_motility_pct >= 0,
+      prog_motility_pct <= 100
+    )
+  
+  list(
+    p0 = mean(df2$prog_motility_pct < thr),
+    n = nrow(df2)
+  )
+}
+
+# use function on applicant data
+print("applicant data")
+compute_p0(data_app)
+
+
+print("donor data")
+compute_p0(data_donor_first)
+
+
+df_mot <- compute_p0(data_app)
+
+p0_motility <- df_mot$p0
+```
+
+## Importing BPS levels for Danish men
+
+```{r}
+#getwd()
+
+df <- read_excel("MEN BPS.xlsx") %>%
+  mutate(P25 = as.numeric(P25)) %>%
+  filter(Year == 2017) %>%
+  mutate(
+    p0_motility     = p0_motility,
+    meanlog_dk      = log(P50),
+    sdlog_dk        = (log(P75) - log(P25)) / (qnorm(0.75) - qnorm(0.25)),
+    p_detectable_dk = 1 - plnorm(LOD, meanlog_dk, sdlog_dk),
+    mean_exp_dk     = exp(meanlog_dk + 0.5 * sdlog_dk^2),  # arithmetic mean of full distribution
+    median_dk       = P50  
+  )
+```
+
+## Chinese ORs
+
+```{r}
+# ORs from the Chinese paper
+# Table 3
+OR_q1 <- 1.00
+OR_q2 <- 0.94
+OR_q3 <- 1.04
+OR_q4 <- 1.62
+
+# Convert 95% CI to log-scale SE
+# simulating uncertainty
+LCL_q2 <- 0.62; UCL_q2 <- 1.44
+LCL_q3 <- 0.68; UCL_q3 <- 1.58
+LCL_q4 <- 1.07; UCL_q4 <- 2.43
+
+se_q2 <- (log(UCL_q2) - log(LCL_q2)) / (2 * 1.96)
+se_q3 <- (log(UCL_q3) - log(LCL_q3)) / (2 * 1.96)
+se_q4 <- (log(UCL_q4) - log(LCL_q4)) / (2 * 1.96)
+```
+
+## Distribution
+
+```{r}
+# from Table 2
+# Using p25, p50, and p75 to fit a lognormal distribution
+# creatine adjusted and for two samples
+fit_chi <- get.lnorm.par(
+  p = c(0.25, 0.50, 0.75),
+  q = c(0.13, 0.29, 0.69),
+  show.output = FALSE,
+  plot = TRUE
+)
+
+
+# extract the fitted lognormal parameters as ordinary numbers
+meanlog_chi <- unname(fit_chi["meanlog"])
+sdlog_chi   <- unname(fit_chi["sdlog"])
+
+
+# Simulate Chinese detectable exposure distribution
+set.seed(123)
+x_chi <- rlnorm(1e6, meanlog = meanlog_chi, sdlog = sdlog_chi)
+
+# Quartile cutpoints among Chinese BPS values
+cut1 <- qlnorm(0.25, meanlog = meanlog_chi, sdlog = sdlog_chi)
+cut2 <- qlnorm(0.50, meanlog = meanlog_chi, sdlog = sdlog_chi)
+cut3 <- qlnorm(0.75, meanlog = meanlog_chi, sdlog = sdlog_chi)
+
+# Mean dose within each quartile
+dose_q1 <- mean(x_chi[x_chi <= cut1])
+dose_q2 <- mean(x_chi[x_chi > cut1 & x_chi <= cut2])
+dose_q3 <- mean(x_chi[x_chi > cut2 & x_chi <= cut3])
+dose_q4 <- mean(x_chi[x_chi > cut3])
+
+
+## Build dose-response dataset and fit linear trend ##
+# dose = representative exposures (means) for the 4 quartiles
+# dose_c = making tertile 1 the reference point/baseline where log(RR)=0, RR=1
+# IS dose_c NECESSARY?
+# logrr = converting the RR to the log scale
+# se = using the SE for the log-risk estimates
+study_dat <- tibble(
+  dose   = c(dose_q1, dose_q2, dose_q3, dose_q4),
+  dose_c = c(dose_q1, dose_q2, dose_q3, dose_q4) - dose_q1,
+  logrr  = log(c(OR_q1, OR_q2, OR_q3, OR_q4)),
+  se     = c(NA, se_q2, se_q3, se_q4)
+)
+
+
+# fitting linear model, trying to finde the slope beta of the best straight line
+# lm(logrr ~ 0 + dose_c) fits the line without an intercept to force it through (0,0) 
+# this means dose_c = 0, logrr = 0 which makes 1 at reference dose (RR = e^logrr = 1, where logrr = 0)
+# data = study_dat[2:3, ], uses just tertile 2 and 3 (removes the first row) because tertile 1 is reference
+
+fit_lin <- lm(
+  logrr ~ 0 + dose_c,
+  data = study_dat[2:4, ],
+  weights = 1 / study_dat$se[2:4]^2
+)
+
+beta_hat <- unname(coef(fit_lin)["dose_c"])
+beta_se  <- summary(fit_lin)$coefficients["dose_c", "Std. Error"]
+
+x_ref <- dose_q1
+
+beta_hat
+beta_se
+summary(fit_lin)
+```
+
+```{r}
+# making a sequence of dose values for plotting
+pred_grid <- tibble(
+  dose = seq(min(study_dat$dose), max(study_dat$dose), length.out = 100)
+) %>%
+  mutate(
+    dose_c = dose - dose_q1
+  ) %>%
+  mutate(
+    logrr_fit = predict(fit_lin, newdata = .)
+  )
+
+# plot
+p_logrr <- ggplot() +
+  geom_line(data = pred_grid, aes(x = dose, y = logrr_fit)) +
+  geom_point(data = study_dat, aes(x = dose, y = logrr), size = 3) +
+  labs(x = "BPS concentration", y = "log(OR)") +
+  theme_minimal()
+
+p_logrr
+
+# saving plot
+ggsave(
+  filename = "logrr_linear_model_bps_semen.png",
+  plot = p_logrr,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
+
+
+
+
+```
+
+## YLD inputs
+
+```{r}
+## GBD inputs: male infertility prevalence (Denmark, 15-49, 2023)
+
+prevalence_mode  <- 12120.59
+prevalence_lower <- 6434.65
+prevalence_upper <- 21390.85
+
+## Disability weight (GBD, male infertility)
+
+DW_mode <- 0.007564045
+DW_min  <- 0.003335558
+DW_max  <- 0.015242128
+
+
+### YLD FROM GBD ###
+# 78.41 (25.71, 180.01)
+
+dw_test <- 78.41/12120.59
+
+### NO YLL SINCE INFERTILITY DOES NOT CAUSE DEATH
+```
+
+## PERT
+
+```{r}
+## Helper functions
+
+rpert <- function(n, min, mode, max) {
+  alpha <- 1 + 4 * (mode - min) / (max - min)
+  beta  <- 1 + 4 * (max - mode) / (max - min)
+  min + rbeta(n, alpha, beta) * (max - min)
+}
+```
+
+## Monte Carlo
+
+```{r}
+run_mc_row_semen <- function(
+  p_detectable_dk, mean_exp_dk,
+  prevalence_mode, prevalence_lower, prevalence_upper,
+  DW_min, DW_mode, DW_max,
+  beta_hat, beta_se, x_ref
+) {
+
+  # uncertainty in dose-response slope
+  beta <- rnorm(1, mean = beta_hat, sd = beta_se)
+
+  # RR for poor motility at mean detectable Danish exposure
+  rr_motility <- exp(beta * (mean_exp_dk - x_ref))
+
+  # PAF for poor motility
+  PAF_motility <- (p_detectable_dk * (rr_motility - 1)) /
+                  (1 + p_detectable_dk * (rr_motility - 1))
+
+  # mediation fraction: proportion of male infertility driven by poor motility
+  # PERT based on literature: range: 16-24%
+  med_frac <- rpert(1, min = 0.16, mode = 0.20, max = 0.24)
+
+  # PAF for male infertility
+  PAF_infertility <- PAF_motility * med_frac
+
+  # prevalence uncertainty
+  # does this align with the correct approach?
+  prev <- rpert(1,
+                min  = prevalence_lower,
+                mode = prevalence_mode,
+                max  = prevalence_upper)
+
+  # attributable cases
+  AC <- PAF_infertility * prev
+
+  # disability weight uncertainty
+  DW <- rpert(1, DW_min, DW_mode, DW_max)
+
+  # YLD (prevalence-based, no duration multiplier)
+  YLD  <- AC * DW
+  DALY <- YLD   # no YLL for male infertility
+
+  tibble(
+    PAF_motility    = PAF_motility,
+    PAF_infertility = PAF_infertility,
+    med_frac        = med_frac,
+    AC              = AC,
+    DW              = DW,
+    YLD             = YLD,
+    DALY            = DALY
+  )
+}
+
+run_mc_summary_semen <- function(
+  p_detectable_dk, mean_exp_dk,
+  prevalence_mode, prevalence_lower, prevalence_upper,
+  DW_min, DW_mode, DW_max,
+  beta_hat, beta_se, x_ref,
+  nsim = 3000
+) {
+
+  sims <- map_dfr(seq_len(nsim), ~ run_mc_row_semen(
+    p_detectable_dk  = p_detectable_dk,
+    mean_exp_dk        = mean_exp_dk,
+    prevalence_mode  = prevalence_mode,
+    prevalence_lower = prevalence_lower,
+    prevalence_upper = prevalence_upper,
+    DW_min           = DW_min,
+    DW_mode          = DW_mode,
+    DW_max           = DW_max,
+    beta_hat         = beta_hat,
+    beta_se          = beta_se,
+    x_ref            = x_ref
+  ))
+
+  tibble(
+    PAF_motility_med    = median(sims$PAF_motility),
+    PAF_motility_lo     = quantile(sims$PAF_motility, 0.025),
+    PAF_motility_hi     = quantile(sims$PAF_motility, 0.975),
+
+    PAF_infertility_med = median(sims$PAF_infertility),
+    PAF_infertility_lo  = quantile(sims$PAF_infertility, 0.025),
+    PAF_infertility_hi  = quantile(sims$PAF_infertility, 0.975),
+
+    AC_med  = median(sims$AC),
+    AC_lo   = quantile(sims$AC, 0.025),
+    AC_hi   = quantile(sims$AC, 0.975),
+
+    YLD_med  = median(sims$YLD),
+    YLD_lo   = quantile(sims$YLD, 0.025),
+    YLD_hi   = quantile(sims$YLD, 0.975),
+
+    DALY_med = median(sims$DALY),
+    DALY_lo  = quantile(sims$DALY, 0.025),
+    DALY_hi  = quantile(sims$DALY, 0.975)
+  )
+}
+```
+
+```{r}
+results_semen <- df %>%
+  mutate(
+    mc = pmap(
+      list(p_detectable_dk, mean_exp_dk),
+      ~ run_mc_summary_semen(
+        p_detectable_dk  = ..1,
+        mean_exp_dk        = ..2,
+        prevalence_mode  = prevalence_mode,
+        prevalence_lower = prevalence_lower,
+        prevalence_upper = prevalence_upper,
+        DW_min           = DW_min,
+        DW_mode          = DW_mode,
+        DW_max           = DW_max,
+        beta_hat         = beta_hat,
+        beta_se          = beta_se,
+        x_ref            = x_ref,
+        nsim             = 3000
+      )
+    )
+  ) %>%
+  unnest(mc)
+
+results_semen
+```
+
+## checks
+
+```{r}
+
+df %>%
+  mutate(rr_at_median = exp(beta_hat * (mean_exp_dk - x_ref))) %>%
+  dplyr::select(Year, mean_exp_dk, p_detectable_dk, rr_at_median)
+
+beta_hat
+x_ref
+
+
+dose_q1
+dose_q2
+dose_q3
+dose_q4
+```

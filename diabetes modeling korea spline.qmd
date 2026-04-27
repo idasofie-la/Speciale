@@ -195,7 +195,7 @@ df <- df %>%
   )
 ```
 
-## Disability weight inputs 
+## Disability weight inputs
 
 ```{r}
 # downloaded from GBD
