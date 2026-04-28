@@ -123,22 +123,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="importing-data" class="level2">
 <h2 class="anchored" data-anchor-id="importing-data">Importing data</h2>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co"># loading danish inputs, sex, LOD, BPS percentiles &amp; diabetes incidence</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># maybe name it better :-)</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co"># doing lognormal distribution to the danish percentiles</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">read_excel</span>(<span class="st">"diabetes korea (GBD).xlsx"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">meanlog_dk =</span> <span class="fu">log</span>(p_50),</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">sdlog_dk   =</span> (<span class="fu">log</span>(p_75) <span class="sc">-</span> <span class="fu">log</span>(p_25)) <span class="sc">/</span> (<span class="fu">qnorm</span>(<span class="fl">0.75</span>) <span class="sc">-</span> <span class="fu">qnorm</span>(<span class="fl">0.25</span>)),</span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="co"># exepected fraction of population above LOD</span></span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_detectable_dk =</span> <span class="dv">1</span> <span class="sc">-</span> <span class="fu">plnorm</span>(LOD, meanlog_dk, sdlog_dk),</span>
-<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="co"># arithemtic mean</span></span>
-<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    <span class="co"># is this right?</span></span>
-<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_exp_dk =</span> <span class="fu">exp</span>(meanlog_dk <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> sdlog_dk<span class="sc">^</span><span class="dv">2</span>), <span class="co"># not used right now, PAF too high</span></span>
-<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    <span class="at">median_dk =</span> p_50 <span class="co"># currently used</span></span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># loading danish inputs, sex, LOD, BPS percentiles &amp; diabetes incidence</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co"># doing lognormal distribution to the danish percentiles</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>df <span class="ot">&lt;-</span> <span class="fu">read_excel</span>(<span class="st">"diabetes korea (GBD).xlsx"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">meanlog_dk =</span> <span class="fu">log</span>(p_50),</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">sdlog_dk   =</span> (<span class="fu">log</span>(p_75) <span class="sc">-</span> <span class="fu">log</span>(p_25)) <span class="sc">/</span> (<span class="fu">qnorm</span>(<span class="fl">0.75</span>) <span class="sc">-</span> <span class="fu">qnorm</span>(<span class="fl">0.25</span>)),</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="co"># exepected fraction of population above LOD</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_detectable_dk =</span> <span class="dv">1</span> <span class="sc">-</span> <span class="fu">plnorm</span>(LOD, meanlog_dk, sdlog_dk),</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="co"># arithemtic mean</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="co"># is this right?</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_exp_dk =</span> <span class="fu">exp</span>(meanlog_dk <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> sdlog_dk<span class="sc">^</span><span class="dv">2</span>), <span class="co"># not used right now, PAF too high</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">median_dk =</span> p_50 <span class="co"># currently used</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </section>
 <section id="korean-study-inputs-bps-and-diabetes" class="level2">
@@ -189,66 +186,72 @@ occurred or specified tolerance not achieved)!</code></pre>
 <span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Simulate Korean detectable exposure distribution</span></span>
 <span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="co"># If detectable Korean BPS is lognormal, what concentrations are typical in tertiles 1, 2, and 3?</span></span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>x_kor <span class="ot">&lt;-</span> <span class="fu">rlnorm</span>(<span class="fl">1e6</span>, <span class="at">meanlog =</span> meanlog_kor, <span class="at">sdlog =</span> sdlog_kor)</span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Tertile cutpoints among detectable Korean values</span></span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>cut1 <span class="ot">&lt;-</span> <span class="fu">qlnorm</span>(<span class="dv">1</span><span class="sc">/</span><span class="dv">3</span>, <span class="at">meanlog =</span> meanlog_kor, <span class="at">sdlog =</span> sdlog_kor)</span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>cut2 <span class="ot">&lt;-</span> <span class="fu">qlnorm</span>(<span class="dv">2</span><span class="sc">/</span><span class="dv">3</span>, <span class="at">meanlog =</span> meanlog_kor, <span class="at">sdlog =</span> sdlog_kor)</span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Medians within each tertile</span></span>
-<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="co"># finding the typical dose within the tertile</span></span>
-<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="co"># cuts represent the boundaries between the tertiles</span></span>
-<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>dose_t1 <span class="ot">&lt;-</span> <span class="fu">median</span>(x_kor[x_kor <span class="sc">&lt;=</span> cut1])</span>
-<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>dose_t2 <span class="ot">&lt;-</span> <span class="fu">median</span>(x_kor[x_kor <span class="sc">&gt;</span> cut1 <span class="sc">&amp;</span> x_kor <span class="sc">&lt;=</span> cut2])</span>
-<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>dose_t3 <span class="ot">&lt;-</span> <span class="fu">median</span>(x_kor[x_kor <span class="sc">&gt;</span> cut2])</span>
-<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>x_kor <span class="ot">&lt;-</span> <span class="fu">rlnorm</span>(<span class="fl">1e6</span>, <span class="at">meanlog =</span> meanlog_kor, <span class="at">sdlog =</span> sdlog_kor)</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Tertile cutpoints among detectable Korean values</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>cut1 <span class="ot">&lt;-</span> <span class="fu">qlnorm</span>(<span class="dv">1</span><span class="sc">/</span><span class="dv">3</span>, <span class="at">meanlog =</span> meanlog_kor, <span class="at">sdlog =</span> sdlog_kor)</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>cut2 <span class="ot">&lt;-</span> <span class="fu">qlnorm</span>(<span class="dv">2</span><span class="sc">/</span><span class="dv">3</span>, <span class="at">meanlog =</span> meanlog_kor, <span class="at">sdlog =</span> sdlog_kor)</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Medians within each tertile</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="co"># finding the typical dose within the tertile</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a><span class="co"># cuts represent the boundaries between the tertiles</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a><span class="co"># dose_t1 &lt;- median(x_kor[x_kor &lt;= cut1])</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a><span class="co"># dose_t2 &lt;- median(x_kor[x_kor &gt; cut1 &amp; x_kor &lt;= cut2])</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a><span class="co"># dose_t3 &lt;- median(x_kor[x_kor &gt; cut2])</span></span>
 <span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a><span class="do">## Build dose-response dataset and fit linear trend ##</span></span>
-<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a><span class="co"># dose = representative exposures (medians) for the 3 tertiles</span></span>
-<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a><span class="co"># dose_c = making tertile 1 the reference point/baseline where log(RR)=0, RR=1</span></span>
-<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a><span class="co"># IS dose_c NECESSARY?</span></span>
-<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a><span class="co"># logrr = converting the RR to the log scale</span></span>
-<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a><span class="co"># se = using the SE for the log-risk estimates</span></span>
-<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>study_dat <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
-<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a>  <span class="at">dose   =</span> <span class="fu">c</span>(dose_t1, dose_t2, dose_t3),</span>
-<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>  <span class="at">dose_c =</span> <span class="fu">c</span>(dose_t1, dose_t2, dose_t3) <span class="sc">-</span> dose_t1,</span>
-<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a>  <span class="at">logrr  =</span> <span class="fu">log</span>(<span class="fu">c</span>(<span class="dv">1</span>, OR_t2, OR_t3)),</span>
-<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a>  <span class="at">se     =</span> <span class="fu">c</span>(<span class="cn">NA</span>, se_t2, se_t3)</span>
-<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a><span class="co"># fitting linear model, trying to finde the slope beta of the best straight line</span></span>
-<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a><span class="co"># lm(logrr ~ 0 + dose_c) fits the line without an intercept to force it through (0,0) </span></span>
-<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a><span class="co"># this means dose_c = 0, logrr = 0 which makes 1 at reference dose (RR = e^logrr = 1, where logrr = 0)</span></span>
-<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a><span class="co"># data = study_dat[2:3, ], uses just tertile 2 and 3 (removes the first row) because tertile 1 is reference</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a><span class="co"># trying with mean</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>dose_t1 <span class="ot">&lt;-</span> <span class="fu">mean</span>(x_kor[x_kor <span class="sc">&lt;=</span> cut1])</span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>dose_t2 <span class="ot">&lt;-</span> <span class="fu">mean</span>(x_kor[x_kor <span class="sc">&gt;</span> cut1 <span class="sc">&amp;</span> x_kor <span class="sc">&lt;=</span> cut2])</span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>dose_t3 <span class="ot">&lt;-</span> <span class="fu">mean</span>(x_kor[x_kor <span class="sc">&gt;</span> cut2])</span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a><span class="do">## Build dose-response dataset and fit linear trend ##</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a><span class="co"># dose = representative exposures (medians) for the 3 tertiles</span></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a><span class="co"># dose_c = making tertile 1 the reference point/baseline where log(RR)=0, RR=1</span></span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a><span class="co"># IS dose_c NECESSARY?</span></span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a><span class="co"># logrr = converting the RR to the log scale</span></span>
+<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a><span class="co"># se = using the SE for the log-risk estimates</span></span>
+<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>study_dat <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a>  <span class="at">dose   =</span> <span class="fu">c</span>(dose_t1, dose_t2, dose_t3),</span>
+<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a>  <span class="at">dose_c =</span> <span class="fu">c</span>(dose_t1, dose_t2, dose_t3) <span class="sc">-</span> dose_t1,</span>
+<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>  <span class="at">logrr  =</span> <span class="fu">log</span>(<span class="fu">c</span>(<span class="dv">1</span>, OR_t2, OR_t3)),</span>
+<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a>  <span class="at">se     =</span> <span class="fu">c</span>(<span class="cn">NA</span>, se_t2, se_t3)</span>
+<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a>fit_lin <span class="ot">&lt;-</span> <span class="fu">lm</span>(logrr <span class="sc">~</span> <span class="dv">0</span> <span class="sc">+</span> dose_c,</span>
-<span id="cb9-41"><a href="#cb9-41" aria-hidden="true" tabindex="-1"></a>              <span class="at">data =</span> study_dat[<span class="dv">2</span><span class="sc">:</span><span class="dv">3</span>, ],</span>
-<span id="cb9-42"><a href="#cb9-42" aria-hidden="true" tabindex="-1"></a>              <span class="at">weights =</span> <span class="dv">1</span> <span class="sc">/</span> study_dat<span class="sc">$</span>se[<span class="dv">2</span><span class="sc">:</span><span class="dv">3</span>]<span class="sc">^</span><span class="dv">2</span>) <span class="co"># smaller SE -&gt; larger weight -&gt; more influence</span></span>
-<span id="cb9-43"><a href="#cb9-43" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-44"><a href="#cb9-44" aria-hidden="true" tabindex="-1"></a><span class="do">### SPLINE </span><span class="al">###</span></span>
-<span id="cb9-45"><a href="#cb9-45" aria-hidden="true" tabindex="-1"></a>study_dat2 <span class="ot">&lt;-</span> study_dat <span class="sc">%&gt;%</span></span>
-<span id="cb9-46"><a href="#cb9-46" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">w =</span> <span class="fu">c</span>(<span class="fl">1e6</span>, <span class="dv">1</span><span class="sc">/</span>se_t2<span class="sc">^</span><span class="dv">2</span>, <span class="dv">1</span><span class="sc">/</span>se_t3<span class="sc">^</span><span class="dv">2</span>))</span>
-<span id="cb9-47"><a href="#cb9-47" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-48"><a href="#cb9-48" aria-hidden="true" tabindex="-1"></a>fit_quad <span class="ot">&lt;-</span> <span class="fu">lm</span>(logrr <span class="sc">~</span> <span class="dv">0</span> <span class="sc">+</span> dose_c <span class="sc">+</span> <span class="fu">I</span>(dose_c<span class="sc">^</span><span class="dv">2</span>),</span>
-<span id="cb9-49"><a href="#cb9-49" aria-hidden="true" tabindex="-1"></a>               <span class="at">data =</span> study_dat2,</span>
-<span id="cb9-50"><a href="#cb9-50" aria-hidden="true" tabindex="-1"></a>               <span class="at">weights =</span> w)</span>
-<span id="cb9-51"><a href="#cb9-51" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-52"><a href="#cb9-52" aria-hidden="true" tabindex="-1"></a><span class="co"># estimated slope of line + uncertainty of the estimated slope</span></span>
-<span id="cb9-53"><a href="#cb9-53" aria-hidden="true" tabindex="-1"></a>beta_hat <span class="ot">&lt;-</span> <span class="fu">unname</span>(<span class="fu">coef</span>(fit_lin)[<span class="st">"dose_c"</span>])</span>
-<span id="cb9-54"><a href="#cb9-54" aria-hidden="true" tabindex="-1"></a>beta_se  <span class="ot">&lt;-</span> <span class="fu">summary</span>(fit_lin)<span class="sc">$</span>coefficients[<span class="st">"dose_c"</span>, <span class="st">"Std. Error"</span>]</span>
-<span id="cb9-55"><a href="#cb9-55" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-56"><a href="#cb9-56" aria-hidden="true" tabindex="-1"></a><span class="co"># reference dose</span></span>
-<span id="cb9-57"><a href="#cb9-57" aria-hidden="true" tabindex="-1"></a>x_ref <span class="ot">&lt;-</span> dose_t1</span>
-<span id="cb9-58"><a href="#cb9-58" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-59"><a href="#cb9-59" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-60"><a href="#cb9-60" aria-hidden="true" tabindex="-1"></a>beta_hat</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-41"><a href="#cb9-41" aria-hidden="true" tabindex="-1"></a><span class="co"># fitting linear model, trying to finde the slope beta of the best straight line</span></span>
+<span id="cb9-42"><a href="#cb9-42" aria-hidden="true" tabindex="-1"></a><span class="co"># lm(logrr ~ 0 + dose_c) fits the line without an intercept to force it through (0,0) </span></span>
+<span id="cb9-43"><a href="#cb9-43" aria-hidden="true" tabindex="-1"></a><span class="co"># this means dose_c = 0, logrr = 0 which makes 1 at reference dose (RR = e^logrr = 1, where logrr = 0)</span></span>
+<span id="cb9-44"><a href="#cb9-44" aria-hidden="true" tabindex="-1"></a><span class="co"># data = study_dat[2:3, ], uses just tertile 2 and 3 (removes the first row) because tertile 1 is reference</span></span>
+<span id="cb9-45"><a href="#cb9-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-46"><a href="#cb9-46" aria-hidden="true" tabindex="-1"></a>fit_lin <span class="ot">&lt;-</span> <span class="fu">lm</span>(logrr <span class="sc">~</span> <span class="dv">0</span> <span class="sc">+</span> dose_c,</span>
+<span id="cb9-47"><a href="#cb9-47" aria-hidden="true" tabindex="-1"></a>              <span class="at">data =</span> study_dat[<span class="dv">2</span><span class="sc">:</span><span class="dv">3</span>, ],</span>
+<span id="cb9-48"><a href="#cb9-48" aria-hidden="true" tabindex="-1"></a>              <span class="at">weights =</span> <span class="dv">1</span> <span class="sc">/</span> study_dat<span class="sc">$</span>se[<span class="dv">2</span><span class="sc">:</span><span class="dv">3</span>]<span class="sc">^</span><span class="dv">2</span>) <span class="co"># smaller SE -&gt; larger weight -&gt; more influence</span></span>
+<span id="cb9-49"><a href="#cb9-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-50"><a href="#cb9-50" aria-hidden="true" tabindex="-1"></a><span class="do">### SPLINE </span><span class="al">###</span></span>
+<span id="cb9-51"><a href="#cb9-51" aria-hidden="true" tabindex="-1"></a>study_dat2 <span class="ot">&lt;-</span> study_dat <span class="sc">%&gt;%</span></span>
+<span id="cb9-52"><a href="#cb9-52" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">w =</span> <span class="fu">c</span>(<span class="fl">1e6</span>, <span class="dv">1</span><span class="sc">/</span>se_t2<span class="sc">^</span><span class="dv">2</span>, <span class="dv">1</span><span class="sc">/</span>se_t3<span class="sc">^</span><span class="dv">2</span>))</span>
+<span id="cb9-53"><a href="#cb9-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-54"><a href="#cb9-54" aria-hidden="true" tabindex="-1"></a>fit_quad <span class="ot">&lt;-</span> <span class="fu">lm</span>(logrr <span class="sc">~</span> <span class="dv">0</span> <span class="sc">+</span> dose_c <span class="sc">+</span> <span class="fu">I</span>(dose_c<span class="sc">^</span><span class="dv">2</span>),</span>
+<span id="cb9-55"><a href="#cb9-55" aria-hidden="true" tabindex="-1"></a>               <span class="at">data =</span> study_dat2,</span>
+<span id="cb9-56"><a href="#cb9-56" aria-hidden="true" tabindex="-1"></a>               <span class="at">weights =</span> w)</span>
+<span id="cb9-57"><a href="#cb9-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-58"><a href="#cb9-58" aria-hidden="true" tabindex="-1"></a><span class="co"># estimated slope of line + uncertainty of the estimated slope</span></span>
+<span id="cb9-59"><a href="#cb9-59" aria-hidden="true" tabindex="-1"></a>beta_hat <span class="ot">&lt;-</span> <span class="fu">unname</span>(<span class="fu">coef</span>(fit_lin)[<span class="st">"dose_c"</span>])</span>
+<span id="cb9-60"><a href="#cb9-60" aria-hidden="true" tabindex="-1"></a>beta_se  <span class="ot">&lt;-</span> <span class="fu">summary</span>(fit_lin)<span class="sc">$</span>coefficients[<span class="st">"dose_c"</span>, <span class="st">"Std. Error"</span>]</span>
+<span id="cb9-61"><a href="#cb9-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-62"><a href="#cb9-62" aria-hidden="true" tabindex="-1"></a><span class="co"># reference dose</span></span>
+<span id="cb9-63"><a href="#cb9-63" aria-hidden="true" tabindex="-1"></a>x_ref <span class="ot">&lt;-</span> dose_t1</span>
+<span id="cb9-64"><a href="#cb9-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-65"><a href="#cb9-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-66"><a href="#cb9-66" aria-hidden="true" tabindex="-1"></a>beta_hat</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 7.47436</code></pre>
+<pre><code>[1] 5.388419</code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>beta_se</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 2.57111</code></pre>
+<pre><code>[1] 2.209392</code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(fit_lin)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
@@ -258,24 +261,24 @@ lm(formula = logrr ~ 0 + dose_c, data = study_dat[2:3, ], weights = 1/study_dat$
 
 Weighted Residuals:
       1       2 
- 1.1216 -0.2911 
+ 1.3256 -0.2633 
 
 Coefficients:
        Estimate Std. Error t value Pr(&gt;|t|)
-dose_c    7.474      2.571   2.907    0.211
+dose_c    5.388      2.209   2.439    0.248
 
-Residual standard error: 1.159 on 1 degrees of freedom
-Multiple R-squared:  0.8942,    Adjusted R-squared:  0.7884 
-F-statistic: 8.451 on 1 and 1 DF,  p-value: 0.2109</code></pre>
+Residual standard error: 1.351 on 1 degrees of freedom
+Multiple R-squared:  0.8561,    Adjusted R-squared:  0.7122 
+F-statistic: 5.948 on 1 and 1 DF,  p-value: 0.2477</code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>study_dat</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 3 × 4
     dose dose_c logrr     se
    &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;
-1 0.0207 0      0     NA    
-2 0.0523 0.0315 0.548  0.279
-3 0.132  0.111  0.756  0.255</code></pre>
+1 0.0205 0      0     NA    
+2 0.0537 0.0332 0.548  0.279
+3 0.173  0.153  0.756  0.255</code></pre>
 </div>
 </div>
 <div class="cell">
@@ -294,7 +297,7 @@ F-statistic: 8.451 on 1 and 1 DF,  p-value: 0.2109</code></pre>
 <span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>p_logrr <span class="ot">&lt;-</span> <span class="fu">ggplot</span>() <span class="sc">+</span></span>
 <span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> pred_grid, <span class="fu">aes</span>(<span class="at">x =</span> dose, <span class="at">y =</span> logrr_fit)) <span class="sc">+</span></span>
 <span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> study_dat, <span class="fu">aes</span>(<span class="at">x =</span> dose, <span class="at">y =</span> logrr), <span class="at">size =</span> <span class="dv">3</span>) <span class="sc">+</span></span>
-<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"BPS concentration"</span>, <span class="at">y =</span> <span class="st">"log(RR)"</span>) <span class="sc">+</span></span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"BPS concentration"</span>, <span class="at">y =</span> <span class="st">"log(OR)"</span>) <span class="sc">+</span></span>
 <span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span>
 <span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a>p_logrr</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -350,9 +353,9 @@ F-statistic: 8.451 on 1 and 1 DF,  p-value: 0.2109</code></pre>
 <span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>age_m <span class="ot">&lt;-</span> <span class="fl">62.1</span></span>
 <span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>age_f <span class="ot">&lt;-</span> <span class="fl">64.6</span></span>
 <span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Life expectancy in DK</span></span>
-<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>life_m <span class="ot">&lt;-</span> <span class="fl">78.8</span></span>
-<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>life_f <span class="ot">&lt;-</span> <span class="fl">82.8</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Life expectancy in DK in 2023</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>life_m <span class="ot">&lt;-</span> <span class="fl">79.9</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>life_f <span class="ot">&lt;-</span> <span class="fl">83.7</span></span>
 <span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="co"># estimating the duration</span></span>
 <span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>D_m <span class="ot">&lt;-</span> life_m <span class="sc">-</span> age_m</span>
@@ -372,12 +375,12 @@ F-statistic: 8.451 on 1 and 1 DF,  p-value: 0.2109</code></pre>
 <section id="inputs-for-yll" class="level2">
 <h2 class="anchored" data-anchor-id="inputs-for-yll">Inputs for YLL</h2>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="co"># deaths and diabetes from GBD (DK + T2D)</span></span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>deaths_f <span class="ot">&lt;-</span> <span class="fl">566.89</span></span>
-<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>deaths_m <span class="ot">&lt;-</span> <span class="fl">715.34</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="co"># deaths and diabetes from GBD (DK + T2D) (2023)</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>deaths_f <span class="ot">&lt;-</span> <span class="fl">599.79</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>deaths_m <span class="ot">&lt;-</span> <span class="fl">783.06</span></span>
 <span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>yll_f <span class="ot">&lt;-</span> <span class="fl">7837.82</span></span>
-<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>yll_m <span class="ot">&lt;-</span> <span class="fl">12702.54</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>yll_f <span class="ot">&lt;-</span> <span class="fl">7896.75</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>yll_m <span class="ot">&lt;-</span> <span class="fl">12928.04</span></span>
 <span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a><span class="co"># calculating standard expected years of life lost</span></span>
 <span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>seyll_f <span class="ot">&lt;-</span> yll_f <span class="sc">/</span> deaths_f</span>
@@ -465,10 +468,10 @@ F-statistic: 8.451 on 1 and 1 DF,  p-value: 0.2109</code></pre>
 <span id="cb29-15"><a href="#cb29-15" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Danish detectable average exposure - Korean reference dose</span></span>
 <span id="cb29-16"><a href="#cb29-16" aria-hidden="true" tabindex="-1"></a>  <span class="co"># log(RR) = beta * (dose - reference dose)</span></span>
 <span id="cb29-17"><a href="#cb29-17" aria-hidden="true" tabindex="-1"></a>  <span class="co"># should maybe rename to rr_median</span></span>
-<span id="cb29-18"><a href="#cb29-18" aria-hidden="true" tabindex="-1"></a>  rr_mean <span class="ot">&lt;-</span> <span class="fu">exp</span>(beta <span class="sc">*</span> (median_dk <span class="sc">-</span> x_ref))</span>
+<span id="cb29-18"><a href="#cb29-18" aria-hidden="true" tabindex="-1"></a>  rr_median <span class="ot">&lt;-</span> <span class="fu">exp</span>(beta <span class="sc">*</span> (median_dk <span class="sc">-</span> x_ref))</span>
 <span id="cb29-19"><a href="#cb29-19" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb29-20"><a href="#cb29-20" aria-hidden="true" tabindex="-1"></a>  <span class="co"># PAF for only detectable population</span></span>
-<span id="cb29-21"><a href="#cb29-21" aria-hidden="true" tabindex="-1"></a>  PAF <span class="ot">&lt;-</span> (p_detectable_dk <span class="sc">*</span> (rr_mean <span class="sc">-</span> <span class="dv">1</span>)) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> p_detectable_dk <span class="sc">*</span> (rr_mean <span class="sc">-</span> <span class="dv">1</span>))</span>
+<span id="cb29-21"><a href="#cb29-21" aria-hidden="true" tabindex="-1"></a>  PAF <span class="ot">&lt;-</span> (p_detectable_dk <span class="sc">*</span> (rr_median <span class="sc">-</span> <span class="dv">1</span>)) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> p_detectable_dk <span class="sc">*</span> (rr_median <span class="sc">-</span> <span class="dv">1</span>))</span>
 <span id="cb29-22"><a href="#cb29-22" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb29-23"><a href="#cb29-23" aria-hidden="true" tabindex="-1"></a>  base_cases <span class="ot">&lt;-</span> <span class="cf">if</span> (baseline_uncertainty) {</span>
 <span id="cb29-24"><a href="#cb29-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">rpois</span>(<span class="dv">1</span>, <span class="at">lambda =</span> i_diabetes)</span>
@@ -654,25 +657,49 @@ F-statistic: 8.451 on 1 and 1 DF,  p-value: 0.2109</code></pre>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>beta_hat</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 7.47436</code></pre>
+<pre><code>[1] 5.388419</code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>x_ref</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 0.02073289</code></pre>
+<pre><code>[1] 0.02050012</code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="co"># calculating rr at at median for each sex</span></span>
 <span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>df <span class="sc">%&gt;%</span></span>
 <span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">rr_at_median =</span> <span class="fu">exp</span>(beta_hat <span class="sc">*</span> (median_dk <span class="sc">-</span> x_ref))) <span class="sc">%&gt;%</span></span>
-<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(group, median_dk, rr_at_median)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">select</span>(group, median_dk, rr_at_median)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 2 × 3
   group  median_dk rr_at_median
   &lt;chr&gt;      &lt;dbl&gt;        &lt;dbl&gt;
-1 Female      0.19         3.54
-2 Male        0.22         4.43</code></pre>
+1 Female      0.19         2.49
+2 Male        0.22         2.93</code></pre>
 </div>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="co"># is beta too steep?</span></span>
 <span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a><span class="co"># rr is high</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="co"># checks</span></span>
+<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a>dose_t1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.02050012</code></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a>dose_t2</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.05369755</code></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a>dose_t3</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.1732661</code></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a><span class="fu">unique</span>(df<span class="sc">$</span>median_dk)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.19 0.22</code></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a><span class="fu">unique</span>(df<span class="sc">$</span>mean_exp_dk)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.5515591 0.4642652</code></pre>
+</div>
 </div>
 </section>
 
