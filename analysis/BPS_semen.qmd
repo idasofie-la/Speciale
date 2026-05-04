@@ -36,7 +36,7 @@ data_donor_best <- data_donor %>%
 compute_p0 <- function(df, thr = 32) {
   df2 <- df %>%
     mutate(
-      prog_motility_pct = 100 * (GDaConc + GDbConc) / TSconc
+      prog_motility_pct = 100 * (TMSconc) / TSconc
     ) %>%
     filter(
       is.finite(prog_motility_pct),

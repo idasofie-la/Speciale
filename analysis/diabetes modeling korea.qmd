@@ -19,7 +19,7 @@ library(writexl)
 ```{r}
 # loading danish inputs, sex, LOD, BPS percentiles & diabetes incidence
 # doing lognormal distribution to the danish percentiles
-df <- read_excel("diabetes korea (GBD).xlsx") %>%
+df <- read_excel("/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/data/diabetes korea (GBD).xlsx") %>%
   mutate(
     meanlog_dk = log(p_50),
     sdlog_dk   = (log(p_75) - log(p_25)) / (qnorm(0.75) - qnorm(0.25)),
@@ -147,10 +147,25 @@ pred_grid <- tibble(
 
 # plot
 p_logrr <- ggplot() +
-  geom_line(data = pred_grid, aes(x = dose, y = logrr_fit)) +
-  geom_point(data = study_dat, aes(x = dose, y = logrr), size = 3) +
-  labs(x = "BPS concentration", y = "log(OR)") +
-  theme_minimal()
+  geom_line(
+    data = pred_grid,
+    aes(x = dose, y = logrr_fit),
+    color = "#045A8DFF",
+    linewidth = 1
+  ) +
+  geom_point(
+    data = study_dat,
+    aes(x = dose, y = logrr),
+    color = "#045A8DFF",
+    size = 3
+  ) +
+  labs(
+    title = "BPS and diabetes risk",
+    x = "Urinary BPS concentration",
+    y = "log(OR)"
+  ) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = "bold"))
 
 p_logrr
 
@@ -424,7 +439,7 @@ results_daly_korea_simple
 
 ```{r}
 getwd()
-write_xlsx(results_daly_korea_simple, "results_diabetes_korea_simple.xlsx")
+write_xlsx(results_daly_korea_simple, "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_simple.xlsx")
 ```
 
 ## Checking percentiles
@@ -490,4 +505,49 @@ unique(df$mean_exp_dk)
 
 
 
+```
+
+## DALY plot
+
+```{r}
+# need to restructure data to long format
+daly_long <- results_daly_korea_simple %>%
+  select(group, YLD_med, YLL_med) %>%
+  pivot_longer(
+    cols = c(YLD_med, YLL_med),
+    names_to = "burden_component",
+    values_to = "DALY"
+  ) %>%
+  mutate(
+    burden_component = recode(
+      burden_component,
+      YLD_med = "YLD",
+      YLL_med = "YLL"
+    )
+  )
+
+
+# now plot can be made
+
+daly_plot <- daly_long %>% 
+  ggplot(aes(fill = burden_component, x = group, y = DALY)) +
+  geom_bar(position = "stack", stat = "identity") +
+  theme_classic() +
+  scale_fill_brewer(palette = "PuBu") +
+  labs(title = "BPS-attributable diabetes burden",
+       fill = "DALY component",
+       x = "Sex") +
+  theme(plot.title = element_text(size = 16, face = "bold"))
+  
+
+daly_plot
+
+# saving plot
+ggsave(
+  filename = "daly_plot_korea.png",
+  plot = daly_plot,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
 ```
