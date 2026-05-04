@@ -416,6 +416,8 @@ dose_q4
 ## Write to excel
 
 ```{r}
+#| eval: false
+#| include: false
 getwd()
 #write_xlsx(results_semen, "results_semen_china.xlsx")
 ```
@@ -593,4 +595,7 @@ results_semen <- df %>%
   unnest(mc)
 ```
 
-# 
+```{r}
+getwd()
+write_xlsx(results_semen, "results_semen_china.xlsx")
+```
