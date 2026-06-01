@@ -36,19 +36,23 @@ data_donor_best <- data_donor %>%
 compute_p0 <- function(df, thr = 32) {
   df2 <- df %>%
     mutate(
+      # calculating the percentage of sperms cells that are progressively motile
       prog_motility_pct = 100 * (TMSconc) / TSconc
     ) %>%
     filter(
+      # handling impossible or invalid values, fx TSconc = 0, division would give inF or NaN
       is.finite(prog_motility_pct),
       prog_motility_pct >= 0,
       prog_motility_pct <= 100
     )
   
   list(
-    p0 = mean(df2$prog_motility_pct < thr),
+    p0 = mean(df2$prog_motility_pct < thr), # mean treats TRUE/FALSE values as numbers
     n = nrow(df2)
   )
 }
+
+
 
 # use function on applicant data
 print("applicant data")
@@ -70,6 +74,18 @@ p0_motility_dk <- df_mot$p0
 # why do many donors also not meet the 32% threshold criterion? Only the first sample is utilized, maybe that sample is not others samples of the donor are better? Maybe they fullfill other criteria?
 
 # checked by selecting best concentration, much more applicable results :-)
+
+# creating a new dataframe, with a column describing the motility percentage for each applicant
+data_app_mot <- data_app %>%
+  mutate(
+    prog_motility_pct = 100 * TMSconc / TSconc
+  ) %>%
+  filter(
+    is.finite(prog_motility_pct),
+    prog_motility_pct >= 0,
+    prog_motility_pct <= 100
+  )
+
 ```
 
 ## Importing BPS levels for Danish men
@@ -161,6 +177,13 @@ study_dat <- tibble(
   se     = c(NA, se_q2, se_q3, se_q4)
 )
 
+# Derive CI bounds from SE for plotting
+study_dat <- study_dat %>%
+  mutate(
+    logrr_lower = logrr - 1.96 * se,
+    logrr_upper = logrr + 1.96 * se
+  )
+
 
 # fitting linear model, trying to finde the slope beta of the best straight line
 # lm(logrr ~ 0 + dose_c) fits the line without an intercept to force it through (0,0) 
@@ -186,22 +209,54 @@ summary(fit_lin)
 
 ```{r}
 # making a sequence of dose values for plotting
+# Model uncertainty added
 pred_grid <- tibble(
   dose = seq(min(study_dat$dose), max(study_dat$dose), length.out = 100)
 ) %>%
-  mutate(
-    dose_c = dose - dose_q1
-  ) %>%
-  mutate(
-    logrr_fit = predict(fit_lin, newdata = .)
+  mutate(dose_c = dose - dose_q1) %>%
+  bind_cols(
+    predict(fit_lin, newdata = ., interval = "confidence", level = 0.95) %>%
+      as_tibble() %>%
+      rename(logrr_fit = fit, logrr_lwr = lwr, logrr_upr = upr)
   )
 
 # plot
 p_logrr <- ggplot() +
-  geom_line(data = pred_grid, aes(x = dose, y = logrr_fit)) +
-  geom_point(data = study_dat, aes(x = dose, y = logrr), size = 3) +
-  labs(x = "BPS concentration", y = "log(OR)") +
-  theme_minimal()
+  # Model confidence band
+  geom_ribbon(
+    data = pred_grid,
+    aes(x = dose, ymin = logrr_lwr, ymax = logrr_upr),
+    fill = "#045A8DFF",
+    alpha = 0.15
+  ) +
+  # Model fit line
+  geom_line(
+    data = pred_grid,
+    aes(x = dose, y = logrr_fit),
+    color = "#045A8DFF",
+    linewidth = 1
+  ) +
+  # Data points with error bars  (requires logrr_lower / logrr_upper in study_dat)
+  geom_errorbar(
+    data = study_dat,
+    aes(x = dose, ymin = logrr_lower, ymax = logrr_upper),
+    color = "#045A8DFF",
+    width = 0.02,
+    linewidth = 0.6
+  ) +
+  geom_point(
+    data = study_dat,
+    aes(x = dose, y = logrr),
+    color = "#045A8DFF",
+    size = 3
+  ) +
+  labs(
+    title = "BPS and motility risk",
+    x = "Urinary BPS concentration",
+    y = "log(OR)"
+  ) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = "bold"))
 
 p_logrr
 
@@ -262,10 +317,8 @@ rpert <- function(n, min, mode, max) {
 ## Monte Carlo
 
 ```{r}
-#| eval: false
-#| include: false
 run_mc_row_semen <- function(
-  p_detectable_dk, mean_exp_dk,
+  p_detectable_dk, median_dk,
   prevalence_mode, prevalence_lower, prevalence_upper,
   DW_min, DW_mode, DW_max,
   beta_hat, beta_se, x_ref
@@ -276,14 +329,13 @@ run_mc_row_semen <- function(
 
   # RR for poor motility at mean detectable Danish exposure
   # log(RR) = beta * (dose - reference dose)
-  rr_motility <- exp(beta * (mean_exp_dk - x_ref))
+  rr_motility <- exp(beta * (median_dk - x_ref))
 
   # PAF for poor motility
   PAF_motility <- (p_detectable_dk * (rr_motility - 1)) /
                   (1 + p_detectable_dk * (rr_motility - 1))
 
   # mediation fraction: proportion of male infertility driven by poor motility
-  # PERT based on literature: range: 16-24%
   # CONSERVATIVE APPROACH
   # med_frac <- rpert(1, min = 0.16, mode = 0.20, max = 0.24)
   # Moderate approach
@@ -322,7 +374,7 @@ run_mc_row_semen <- function(
 }
 
 run_mc_summary_semen <- function(
-  p_detectable_dk, mean_exp_dk,
+  p_detectable_dk, median_dk,
   prevalence_mode, prevalence_lower, prevalence_upper,
   DW_min, DW_mode, DW_max,
   beta_hat, beta_se, x_ref,
@@ -331,7 +383,7 @@ run_mc_summary_semen <- function(
 
   sims <- map_dfr(seq_len(nsim), ~ run_mc_row_semen(
     p_detectable_dk  = p_detectable_dk,
-    mean_exp_dk        = mean_exp_dk,
+    median_dk        = median_dk,
     prevalence_mode  = prevalence_mode,
     prevalence_lower = prevalence_lower,
     prevalence_upper = prevalence_upper,
@@ -368,15 +420,13 @@ run_mc_summary_semen <- function(
 ```
 
 ```{r}
-#| eval: false
-#| include: false
 results_semen <- df %>%
   mutate(
     mc = pmap(
-      list(p_detectable_dk, mean_exp_dk),
+      list(p_detectable_dk, median_dk),
       ~ run_mc_summary_semen(
         p_detectable_dk  = ..1,
-        mean_exp_dk        = ..2,
+        median_dk        = ..2,
         prevalence_mode  = prevalence_mode,
         prevalence_lower = prevalence_lower,
         prevalence_upper = prevalence_upper,
@@ -400,8 +450,8 @@ results_semen
 ```{r}
 
 df %>%
-  mutate(rr_at_median = exp(beta_hat * (mean_exp_dk - x_ref))) %>%
-  dplyr::select(Year, mean_exp_dk, p_detectable_dk, rr_at_median)
+  mutate(rr_at_median = exp(beta_hat * (median_dk - x_ref))) %>%
+  dplyr::select(Year, median_dk, p_detectable_dk, rr_at_median)
 
 beta_hat
 x_ref
@@ -428,8 +478,26 @@ getwd()
 # reported percentages of males falling below the 32% threshold
 p0_motility_china <- 0.275
 
-# Danish men falling below threshold is 
+# Danish men falling below threshold
 p0_motility_dk
+
+# counterfactual improvement in progressive motility
+# 3.15 percentage points better motility
+delta_motility <- 3.15
+
+data_app_mot <- data_app_mot %>%
+  mutate(
+    motility_shifted = prog_motility_pct + delta_motility,
+    motility_shifted = pmin(pmax(motility_shifted, 0), 100)
+  )
+
+# percentage below 32% after improved motility
+shifted_p_below <- mean(data_app_mot$motility_shifted < 32)
+shifted_p_below
+
+# reduction in proportion below threshold
+excess_p_below <- p0_motility_dk - shifted_p_below
+excess_p_below
 ```
 
 ## Estimating population size
@@ -438,164 +506,326 @@ p0_motility_dk
 # population size of men 15-49 men in DK
 # https://www.statbank.dk/FOLK2
 N_men_15_49 <- 1341884
+
+# scaling to Denmark
+# how many men in my selected age group will be affected by the shift in motility caused by BPS exposure?
+AC_bu <- excess_p_below * N_men_15_49
 ```
 
-## New MC
+## PLOTTING
 
 ```{r}
-run_mc_row_semen <- function(
-  p_detectable_dk, mean_exp_dk,
-  prevalence_mode, prevalence_lower, prevalence_upper,
-  DW_min, DW_mode, DW_max,
-  beta_hat, beta_se, x_ref,
-  p0_motility_dk, N_men_15_49        # new arguments
-) {
-
-  # uncertainty in dose-response slope
-  beta <- rnorm(1, mean = beta_hat, sd = beta_se)
-
-  # RR for poor motility at mean detectable Danish exposure
-  rr_motility <- exp(beta * (mean_exp_dk - x_ref))
-
-  # PAF for poor motility
-  PAF_motility <- (p_detectable_dk * (rr_motility - 1)) /
-                  (1 + p_detectable_dk * (rr_motility - 1))
-
-  # mediation fraction
-  med_frac <- rpert(1, min = 0.19, mode = 0.40, max = 0.60)
-
-  # PAF for male infertility
-  PAF_infertility <- PAF_motility * med_frac
-
-  # disability weight uncertainty
-  DW <- rpert(1, DW_min, DW_mode, DW_max)
-
-  ## TOP-DOWN ##
-  prev <- rpert(1,
-                min  = prevalence_lower,
-                mode = prevalence_mode,
-                max  = prevalence_upper)
-
-  AC_td   <- PAF_infertility * prev
-  YLD_td  <- AC_td * DW
-  DALY_td <- YLD_td
-
-  ## BOTTOM-UP ##
-  # men in DK with poor motility, scaled by PAF
-  # How big is the at-risk population? + What fraction of those is attributable to BPS?
-  AC_bu   <- PAF_infertility * p0_motility_dk * N_men_15_49
-  
-  YLD_bu  <- AC_bu * DW
-  DALY_bu <- YLD_bu
-
-  tibble(
-    PAF_motility    = PAF_motility,
-    PAF_infertility = PAF_infertility,
-    med_frac        = med_frac,
-
-    # top-down
-    AC_td   = AC_td,
-    YLD_td  = YLD_td,
-    DALY_td = DALY_td,
-
-    # bottom-up
-    AC_bu   = AC_bu,
-    YLD_bu  = YLD_bu,
-    DALY_bu = DALY_bu
-  )
-}
 
 
-run_mc_summary_semen <- function(
-  p_detectable_dk, mean_exp_dk,
-  prevalence_mode, prevalence_lower, prevalence_upper,
-  DW_min, DW_mode, DW_max,
-  beta_hat, beta_se, x_ref,
-  p0_motility_dk, N_men_15_49,       # new arguments
-  nsim = 3000
-) {
-
-  sims <- map_dfr(seq_len(nsim), ~ run_mc_row_semen(
-    p_detectable_dk  = p_detectable_dk,
-    mean_exp_dk      = mean_exp_dk,
-    prevalence_mode  = prevalence_mode,
-    prevalence_lower = prevalence_lower,
-    prevalence_upper = prevalence_upper,
-    DW_min           = DW_min,
-    DW_mode          = DW_mode,
-    DW_max           = DW_max,
-    beta_hat         = beta_hat,
-    beta_se          = beta_se,
-    x_ref            = x_ref,
-    p0_motility_dk   = p0_motility_dk,   # <-- passed through
-    N_men_15_49      = N_men_15_49        # <-- passed through
-  ))
-
-  tibble(
-    PAF_motility_med    = median(sims$PAF_motility),
-    PAF_motility_lo     = quantile(sims$PAF_motility, 0.025),
-    PAF_motility_hi     = quantile(sims$PAF_motility, 0.975),
-
-    PAF_infertility_med = median(sims$PAF_infertility),
-    PAF_infertility_lo  = quantile(sims$PAF_infertility, 0.025),
-    PAF_infertility_hi  = quantile(sims$PAF_infertility, 0.975),
-
-    # top-down summaries
-    AC_td_med  = median(sims$AC_td),
-    AC_td_lo   = quantile(sims$AC_td, 0.025),
-    AC_td_hi   = quantile(sims$AC_td, 0.975),
-
-    YLD_td_med = median(sims$YLD_td),
-    YLD_td_lo  = quantile(sims$YLD_td, 0.025),
-    YLD_td_hi  = quantile(sims$YLD_td, 0.975),
-
-    DALY_td_med = median(sims$DALY_td),
-    DALY_td_lo  = quantile(sims$DALY_td, 0.025),
-    DALY_td_hi  = quantile(sims$DALY_td, 0.975),
-
-    # bottom-up summaries
-    AC_bu_med  = median(sims$AC_bu),
-    AC_bu_lo   = quantile(sims$AC_bu, 0.025),
-    AC_bu_hi   = quantile(sims$AC_bu, 0.975),
-
-    YLD_bu_med = median(sims$YLD_bu),
-    YLD_bu_lo  = quantile(sims$YLD_bu, 0.025),
-    YLD_bu_hi  = quantile(sims$YLD_bu, 0.975),
-
-    DALY_bu_med = median(sims$DALY_bu),
-    DALY_bu_lo  = quantile(sims$DALY_bu, 0.025),
-    DALY_bu_hi  = quantile(sims$DALY_bu, 0.975)
-  )
-}
-```
-
-```{r}
-results_semen <- df %>%
-  mutate(
-    mc = pmap(
-      list(p_detectable_dk, mean_exp_dk),
-      ~ run_mc_summary_semen(
-        p_detectable_dk  = ..1,
-        mean_exp_dk      = ..2,
-        prevalence_mode  = prevalence_mode,
-        prevalence_lower = prevalence_lower,
-        prevalence_upper = prevalence_upper,
-        DW_min           = DW_min,
-        DW_mode          = DW_mode,
-        DW_max           = DW_max,
-        beta_hat         = beta_hat,
-        beta_se          = beta_se,
-        x_ref            = x_ref,
-        p0_motility_dk   = p0_motility_dk,  # <-- scalar from your df_mot
-        N_men_15_49      = N_men_15_49,
-        nsim             = 3000
-      )
-    )
+# create long format for plotting
+data_app_plot <- data_app_mot %>%
+  dplyr::select(
+    Original = prog_motility_pct,
+    After_shift = motility_shifted
   ) %>%
-  unnest(mc)
+  pivot_longer(
+    cols = everything(),
+    names_to = "scenario",
+    values_to = "motility_pct"
+  )
+
+# density plot
+ggplot(data_app_plot, aes(x = motility_pct, fill = scenario)) +
+  geom_density(alpha = 0.35) +
+  geom_vline(xintercept = 32, linetype = "dashed", linewidth = 1) +
+  labs(
+    x = "Progressive motility (%)",
+    y = "Density",
+    fill = "Scenario",
+    title = "Applicant progressive motility before and after BPS-related shift",
+    subtitle = "Dashed line indicates WHO 32% progressive motility threshold"
+  ) +
+  theme_classic()
+
+
+
+
+p_below_summary <- data_app_mot %>%
+  mutate(
+    Original = prog_motility_pct,
+    After_shift = motility_shifted
+  ) %>%
+  dplyr::select(Original, After_shift) %>%
+  tidyr::pivot_longer(
+    cols = everything(),
+    names_to = "scenario",
+    values_to = "motility_pct"
+  ) %>%
+  group_by(scenario) %>%
+  summarise(
+    percent_below_32 = 100 * mean(motility_pct < 32),
+    .groups = "drop"
+  )
+
+ggplot(p_below_summary, aes(x = scenario, y = percent_below_32, fill = scenario)) +
+  geom_col(width = 0.6) +
+  labs(
+    x = NULL,
+    y = "Applicants below 32% progressive motility (%)",
+    title = "Proportion of applicants below WHO threshold before and after BPS-related shift"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
 ```
 
 ```{r}
 getwd()
 write_xlsx(results_semen, "results_semen_china.xlsx")
+```
+
+### BOTTOM UP WITH DOSE-RESPONSE
+
+```{r}
+# Table 4: BPS and progressive motility
+# Values are percentage point changes, not relative %
+pct_q1 <- 0
+pct_q2 <- 1.25
+pct_q3 <- -0.86
+pct_q4 <- -3.15
+
+# Back-calculate SEs from 95% CIs
+se_q2_cont <- (4.41 - (-1.90)) / (2 * 1.96)
+se_q3_cont <- (4.01 - (-2.29)) / (2 * 1.96)
+se_q4_cont <- (0.02 - (-6.32)) / (2 * 1.96)
+
+study_dat_cont <- tibble(
+  dose = c(dose_q1, dose_q2, dose_q3, dose_q4),
+  dose_c = dose - dose_q1,
+  motility_change_pp = c(pct_q1, pct_q2, pct_q3, pct_q4),
+  se = c(NA, se_q2_cont, se_q3_cont, se_q4_cont)
+)
+
+fit_motility <- lm(
+  motility_change_pp ~ 0 + dose_c,
+  data = study_dat_cont[2:4, ],
+  weights = 1 / se^2
+)
+
+beta_motility <- unname(coef(fit_motility)["dose_c"])
+beta_motility_se <- summary(fit_motility)$coefficients["dose_c", "Std. Error"]
+
+beta_motility
+beta_motility_se
+```
+
+### Apply the dose-response to Danish exposure
+
+```{r}
+# Danish exposure level
+median_dk <- df$median_dk
+x_ref <- dose_q1
+
+# Estimated BPS-related change in motility at Danish exposure
+# This is in percentage points
+# Danish BPS exposure is predicted to reduce progressive sperm motility by x percentage points
+delta_motility <- beta_motility * (median_dk - x_ref)
+
+
+delta_motility
+```
+
+### what would motility look like with no BPS exposure?
+
+```{r}
+data_app_mot_bu <- data_app_mot %>%
+  mutate(
+    observed_motility = prog_motility_pct,
+
+    # If delta_motility is negative, removing BPS increases motility
+    no_bps_motility = observed_motility - delta_motility,
+
+    # keep values between 0 and 100
+    no_bps_motility = pmin(pmax(no_bps_motility, 0), 100)
+  )
+
+
+# CALCULATING THE EFFECT
+
+p_below_observed <- mean(data_app_mot_bu$observed_motility < 32)
+p_below_no_bps   <- mean(data_app_mot_bu$no_bps_motility < 32)
+
+excess_p_below <- p_below_observed - p_below_no_bps
+
+p_below_observed
+p_below_no_bps
+excess_p_below
+
+# SCALED TO DANISH MEN?
+
+N_men_15_49 <- 1341884
+
+AC_bu <- excess_p_below * N_men_15_49
+
+AC_bu
+```
+
+### plotting :-)
+
+```{r}
+data_app_plot_bu <- data_app_mot_bu %>%
+  dplyr::select(
+    Observed = observed_motility,
+    No_BPS_exposure = no_bps_motility
+  ) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "scenario",
+    values_to = "motility_pct"
+  )
+
+ggplot(data_app_plot_bu, aes(x = motility_pct, fill = scenario)) +
+  geom_density(alpha = 0.35) +
+  geom_vline(xintercept = 32, linetype = "dashed", linewidth = 1) +
+  labs(
+    x = "Progressive motility (%)",
+    y = "Density",
+    fill = "Scenario",
+    title = "Bottom-up dose-response estimate of BPS impact on progressive motility",
+    subtitle = "Counterfactual assumes no BPS exposure; dashed line = WHO 32% threshold"
+  ) +
+  theme_classic()
+```
+
+```{r}
+p_below_summary_bu <- data_app_plot_bu %>%
+  group_by(scenario) %>%
+  summarise(
+    percent_below_32 = 100 * mean(motility_pct < 32),
+    .groups = "drop"
+  )
+
+ggplot(p_below_summary_bu, aes(x = scenario, y = percent_below_32, fill = scenario)) +
+  geom_col(width = 0.6) +
+  labs(
+    x = NULL,
+    y = "Applicants below 32% progressive motility (%)",
+    title = "Estimated proportion below WHO threshold with and without BPS exposure"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+```
+
+## Normal distribution approach
+
+```{r}
+# Fit normal distribution to Danish motility data
+mu_obs <- mean(data_app_mot$prog_motility_pct)
+sd_obs <- sd(data_app_mot$prog_motility_pct)
+
+# Dose-response estimated BPS effect at Danish exposure
+delta_motility <- beta_motility * (median_dk - x_ref)
+
+# Counterfactual mean without BPS exposure
+# if delta is negative, this increases the mean
+mu_no_bps <- mu_obs - delta_motility
+
+# Proportion below WHO threshold
+p_below_obs <- pnorm(32, mean = mu_obs, sd = sd_obs)
+p_below_no_bps <- pnorm(32, mean = mu_no_bps, sd = sd_obs)
+
+# Attributable proportion below threshold
+excess_p_below <- p_below_obs - p_below_no_bps
+
+p_below_obs
+p_below_no_bps
+excess_p_below
+
+# scaled to Danish men?
+AC_poor_motility_bu <- excess_p_below * N_men_15_49
+AC_poor_motility_bu
+
+
+# same mediation fraction as top-down
+med_frac <- 0.40
+
+# convert poor motility cases to infertility cases
+AC_infertility_bu <- AC_poor_motility_bu * med_frac
+AC_infertility_bu
+```
+
+```{r}
+plot_grid_normal <- tibble(
+  motility_pct = seq(0, 100, length.out = 500),
+  Observed = dnorm(motility_pct, mean = mu_obs, sd = sd_obs),
+  No_BPS_exposure = dnorm(motility_pct, mean = mu_no_bps, sd = sd_obs)
+) %>%
+  pivot_longer(
+    cols = c(Observed, No_BPS_exposure),
+    names_to = "scenario",
+    values_to = "density"
+  )
+
+ggplot(plot_grid_normal, aes(x = motility_pct, y = density, fill = scenario)) +
+  geom_area(alpha = 0.35, position = "identity") +
+  geom_line(aes(color = scenario), linewidth = 1) +
+  geom_vline(xintercept = 32, linetype = "dashed", linewidth = 1) +
+  labs(
+    x = "Progressive motility (%)",
+    y = "Density",
+    fill = "Scenario",
+    color = "Scenario",
+    title = "Bottom-up normal-distribution model of BPS impact on progressive motility",
+    subtitle = "Counterfactual shifts the mean according to the BPS dose-response; dashed line = WHO 32% threshold"
+  ) +
+  theme_classic()
+```
+
+## infertility plot?
+
+```{r}
+infertility_summary <- tibble(
+  outcome = c("Poor motility cases", "Infertility cases"),
+  cases = c(AC_poor_motility_bu, AC_infertility_bu)
+)
+
+ggplot(infertility_summary, aes(x = outcome, y = cases, fill = outcome)) +
+  geom_col(width = 0.6) +
+  labs(
+    x = NULL,
+    y = "Attributable cases",
+    title = "Estimated BPS-attributable cases from bottom-up model",
+    subtitle = "Infertility cases estimated by applying mediation fraction to poor-motility cases"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+
+
+
+
+infertility_burden <- tibble(
+  scenario = c("Observed", "No_BPS_exposure"),
+  poor_motility_cases = c(p_below_obs, p_below_no_bps) * N_men_15_49,
+  infertility_cases = poor_motility_cases * med_frac
+)
+
+ggplot(infertility_burden, aes(x = scenario, y = infertility_cases, fill = scenario)) +
+  geom_col(width = 0.6) +
+  labs(
+    x = NULL,
+    y = "Estimated infertility cases",
+    title = "Estimated infertility cases with and without BPS exposure",
+    subtitle = "Based on proportion below 32% progressive motility and mediation fraction"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+```
+
+```{r}
+set.seed(123)
+
+x_dk <- rlnorm(
+  100000,
+  meanlog = unique(df$meanlog_dk),
+  sdlog = unique(df$sdlog_dk)
+)
+
+hist(x_dk, breaks = 100)
+
+hist(x_dk[x_dk < 1], breaks = 100)
 ```

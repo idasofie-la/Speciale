@@ -20,7 +20,7 @@ library(MASS)
 set.seed(123)
 
 # loading danish inputs, sex, LOD, BPS percentiles & diabetes incidence
-df <- read_excel("diabetes korea (GBD).xlsx") %>%
+df <- read_excel("/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/data/diabetes korea (GBD).xlsx") %>%
   mutate(
     meanlog_dk = log(p_50),
     sdlog_dk = (log(p_75) - log(p_25)) / (qnorm(0.75) - qnorm(0.25)),
@@ -126,10 +126,21 @@ pred_grid_quad$dose_c <- pred_grid_quad$dose - dose_t1
 pred_grid_quad$logrr_fit <- predict(fit_quad, newdata = pred_grid_quad)
 
 p_logrr_quad <- ggplot() +
-  geom_line(data = pred_grid_quad, aes(x = dose, y = logrr_fit)) +
-  geom_point(data = study_dat2, aes(x = dose, y = logrr), size = 3) +
-  labs(x = "BPS concentration", y = "log(RR)") +
-  theme_minimal()
+  geom_line(
+    data = pred_grid_quad, 
+    aes(x = dose, y = logrr_fit),
+    color = "#045A8DFF") +
+  geom_point(
+    data = study_dat2, 
+    aes(x = dose, y = logrr), 
+    size = 3,
+    color = "#045A8DFF") +
+  labs(title = "BPS and diabetes risk (quadratic fit)",
+       x = "Urinary BPS concentration",
+       y = "log(OR)") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = "bold"))
+
 
 p_logrr_quad
 
@@ -382,24 +393,317 @@ results_daly_korea_quad <- df %>%
 results_daly_korea_quad
 ```
 
-## check ?
+## plotting quadratic model
 
 ```{r}
-study_dat2
-coef_quad
-
-pred_grid_check <- tibble(
+pred_grid_quad <- tibble(
   dose = seq(min(study_dat2$dose), max(df$median_dk), length.out = 200)
+) %>%
+  mutate(dose_c = dose - dose_t1) %>%
+  bind_cols(
+    predict(fit_quad, newdata = ., interval = "confidence", level = 0.95) %>%
+      as_tibble() %>%
+      rename(logrr_fit = fit, logrr_lwr = lwr, logrr_upr = upr)
+  )
+
+study_dat2_plot <- study_dat2 %>%
+  mutate(
+    logrr_lower = logrr - 1.96 * se,
+    logrr_upper = logrr + 1.96 * se
+  )
+
+p_quad <- ggplot() +
+  geom_ribbon(
+    data = pred_grid_quad,
+    aes(x = dose, ymin = logrr_lwr, ymax = logrr_upr),
+    fill = "#756bb1",
+    alpha = 0.15
+  ) +
+  geom_line(
+    data = pred_grid_quad,
+    aes(x = dose, y = logrr_fit),
+    color = "#756bb1",
+    linewidth = 1
+  ) +
+  geom_errorbar(
+    data = study_dat2_plot,
+    aes(x = dose, ymin = logrr_lower, ymax = logrr_upper),
+    color = "#54278f",
+    width = 0.006,
+    linewidth = 0.6
+  ) +
+  geom_point(
+    data = study_dat2_plot,
+    aes(x = dose, y = logrr),
+    color = "#54278f",
+    size = 3
+  ) +
+  geom_segment(
+    aes(
+      x = min(study_dat2$dose),
+      xend = max(df$median_dk),
+      y = 0,
+      yend = 0
+    ),
+    linetype = "dashed",
+    linewidth = 0.4,
+    color = "grey40"
+  ) +
+  geom_vline(
+    xintercept = unique(df$median_dk),
+    linetype = "dashed"
+  ) +
+  labs(
+    title = "Quadratic dose-response model for BPS and T2D risk",
+    x = "Urinary BPS concentration",
+    y = "log(OR)"
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.title = element_text(size = 15),
+    axis.text = element_text(size = 13)
+  )
+
+p_quad
+
+# saving plot
+ggsave(
+  filename = "quad_model_korea.png",
+  plot = p_quad,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
+```
+
+## plotting spline model
+
+```{r}
+library(splines)
+
+fit_spline <- lm(
+  logrr ~ 0 + ns(dose_c, df = 2),
+  data = study_dat2,
+  weights = w
 )
 
-pred_grid_check$dose_c <- pred_grid_check$dose - dose_t1
-pred_grid_check$logrr_fit <- predict(fit_quad, newdata = pred_grid_check)
-pred_grid_check$rr_fit <- exp(pred_grid_check$logrr_fit)
+summary(fit_spline)
 
-ggplot(pred_grid_check, aes(x = dose, y = rr_fit)) +
-  geom_line() +
-  geom_point(data = study_dat2, aes(x = dose, y = exp(logrr)), size = 3) +
-  geom_vline(xintercept = unique(df$median_dk), linetype = "dashed") +
-  labs(x = "BPS concentration", y = "RR") +
+# making a sequence of dose values for plotting
+# now also adding model uncertainty 
+pred_grid_spline <- tibble(
+  dose = seq(min(study_dat2$dose), max(df$median_dk), length.out = 100)
+) %>%
+  mutate(dose_c = dose - dose_t1) %>%
+  bind_cols(
+    predict(fit_spline, newdata = ., interval = "confidence", level = 0.95) %>%
+      as_tibble() %>%
+      rename(logrr_fit = fit, logrr_lwr = lwr, logrr_upr = upr)
+  )
+study_dat2_plot <- study_dat2 %>%
+  mutate(
+    logrr_lower = logrr - 1.96 * se,
+    logrr_upper = logrr + 1.96 * se
+  )
+
+p_spline <- ggplot() +
+  geom_ribbon(
+    data = pred_grid_spline,
+    aes(x = dose, ymin = logrr_lwr, ymax = logrr_upr),
+    fill = "#756bb1",
+    alpha = 0.15
+  ) +
+  geom_line(
+    data = pred_grid_spline,
+    aes(x = dose, y = logrr_fit),
+    color = "#756bb1",
+    linewidth = 1
+  ) +
+  geom_errorbar(
+    data = study_dat2_plot,
+    aes(x = dose, ymin = logrr_lower, ymax = logrr_upper),
+    color = "#54278f",
+    width = 0.006,
+    linewidth = 0.6
+  ) +
+  geom_point(
+    data = study_dat2_plot,
+    aes(x = dose, y = logrr),
+    color = "#54278f",
+    size = 3
+  ) +
+  geom_segment(
+    aes(
+      x = min(study_dat2$dose),
+      xend = max(study_dat2$dose),
+      y = 0,
+      yend = 0
+    ),
+    linetype = "dashed",
+    linewidth = 0.4,
+    color = "grey40"
+  ) +
+  geom_vline(
+    xintercept = unique(df$median_dk),
+    linetype = "dashed"
+  ) +
+  labs(
+    title = "Spline dose-response model for BPS and T2D risk",
+    x = "Urinary BPS concentration",
+    y = "log(OR)"
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.title = element_text(size = 15),
+    axis.text = element_text(size = 13)
+  )
+
+p_spline
+
+# saving plot
+ggsave(
+  filename = "spline_model_korea.png",
+  plot = p_spline,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
+```
+
+## Monotonocity?
+
+```{r}
+# mono
+library(scam)
+
+study_dat2 <- study_dat2 %>%
+  mutate(
+    dose_c_scaled = dose_c / max(dose_c)
+  )
+
+fit_mono_spline <- scam(
+  logrr ~ 0 + s(dose_c_scaled, bs = "mpi", k = 4),
+  data = study_dat2,
+  weights = w
+)
+
+summary(fit_mono_spline)
+
+
+dose_scale <- max(study_dat2$dose_c, na.rm = TRUE)
+
+pred_grid_mono <- tibble(
+  dose = seq(
+    min(study_dat2$dose),
+    max(df$median_dk),
+    length.out = 200
+  )
+) %>%
+  mutate(
+    dose_c = dose - dose_t1,
+    dose_c_scaled = dose_c / dose_scale
+  )
+
+pred_grid_mono <- pred_grid_mono %>%
+  mutate(
+    logrr_fit = predict(fit_mono_spline, newdata = pred_grid_mono),
+    rr_fit = exp(logrr_fit)
+  )
+
+p_mono_spline <- ggplot(pred_grid_mono, aes(x = dose, y = rr_fit)) +
+  geom_line(color = "#756bb1", linewidth = 1) +
+  geom_point(
+    data = study_dat2,
+    aes(x = dose, y = exp(logrr)),
+    inherit.aes = FALSE,
+    size = 3,
+    color = "#54278f"
+  ) +
+  geom_vline(
+    xintercept = unique(df$median_dk),
+    linetype = "dashed"
+  ) +
+  labs(
+    title = "Monotone spline exposure-response model",
+    x = "Urinary BPS concentration",
+    y = "RR"
+  ) +
   theme_minimal()
+
+p_mono_spline
+
+
+#No really working...
+```
+
+```{r}
+xmax <- max(df$median_dk, study_dat2$dose, na.rm = TRUE) - dose_t1
+
+x_constraint <- seq(0, xmax, length.out = 200)
+
+objective_quad <- function(beta) {
+  b1 <- beta[1]
+  b2 <- beta[2]
+
+  pred <- b1 * study_dat2$dose_c + b2 * study_dat2$dose_c^2
+
+  sum(study_dat2$w * (study_dat2$logrr - pred)^2)
+}
+
+ui <- cbind(
+  1,
+  2 * x_constraint
+)
+
+ci <- rep(0, length(x_constraint))
+
+fit_mono_quad <- constrOptim(
+  theta = coef(fit_quad),
+  f = objective_quad,
+  grad = NULL,
+  ui = ui,
+  ci = ci
+)
+
+coef_mono_quad <- fit_mono_quad$par
+coef_mono_quad
+
+
+pred_grid_mono_quad <- tibble(
+  dose = seq(
+    min(study_dat2$dose),
+    max(df$median_dk, study_dat2$dose, na.rm = TRUE),
+    length.out = 200
+  )
+) %>%
+  mutate(
+    dose_c = dose - dose_t1,
+    logrr_fit = coef_mono_quad[1] * dose_c + coef_mono_quad[2] * dose_c^2,
+    rr_fit = exp(logrr_fit)
+  )
+
+p_mono_quad <- ggplot(pred_grid_mono_quad, aes(x = dose, y = rr_fit)) +
+  geom_line(color = "#045A8DFF", linewidth = 1) +
+  geom_point(
+    data = study_dat2,
+    aes(x = dose, y = exp(logrr)),
+    inherit.aes = FALSE,
+    size = 3,
+    color = "#045A8DFF"
+  ) +
+  geom_vline(
+    xintercept = unique(df$median_dk),
+    linetype = "dashed"
+  ) +
+  labs(
+    title = "Monotone quadratic exposure-response model",
+    x = "Urinary BPS concentration",
+    y = "RR"
+  ) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = "bold"))
+
+p_mono_quad
 ```
