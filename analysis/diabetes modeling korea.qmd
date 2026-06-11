@@ -19,7 +19,7 @@ library(writexl)
 ```{r}
 # loading danish inputs, sex, LOD, BPS percentiles & diabetes incidence
 # doing lognormal distribution to the danish percentiles
-df <- read_excel("/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/data/diabetes korea (GBD) AD.xlsx") %>%
+df <- read_excel("/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/data/diabetes korea (GBD).xlsx") %>%
   mutate(
     meanlog_dk = log(p_50),
     sdlog_dk   = (log(p_75) - log(p_25)) / (qnorm(0.75) - qnorm(0.25)),
@@ -263,24 +263,6 @@ ggsave(
 )
 ```
 
-```{r}
-pred_grid <- tibble(
-  dose = seq(min(study_dat2$dose), max(study_dat2$dose), length.out = 100)
-)
-
-pred_grid$dose_c <- pred_grid$dose - dose_t1
-
-pred_grid$logrr_fit <- predict(fit_quad, newdata = pred_grid)
-
-p_logrr_quad <- ggplot() +
-  geom_line(data = pred_grid, aes(x = dose, y = logrr_fit)) +
-  geom_point(data = study_dat2, aes(x = dose, y = logrr), size = 3) +
-  labs(x = "BPS concentration", y = "log(RR)") +
-  theme_minimal()
-
-p_logrr_quad
-```
-
 ## Duration inputs for YLD
 
 ```{r}
@@ -346,21 +328,61 @@ df <- df %>%
 # DW_max  <- 0.072092547
 
 # downloaded from GBD
-YLD_total <- 13225.904475796962 + 8355.60842682979
-YLD_lower_total <- 8916.644865520693 + 5617.300593266269
-YLD_upper_total <- 17957.837169143662 + 11465.14910195645
+# Sex-specific YLD estimates downloaded from GBD
+YLD_fem       <- 8355.60842682979
+YLD_fem_lower <- 5617.300593266269
+YLD_fem_upper <- 11465.14910195645
 
+YLD_male       <- 13225.904475796962
+YLD_male_lower <- 8916.644865520693
+YLD_male_upper <- 17957.837169143662
+
+
+# Combined YLD estimates used to derive the average disability weight
+YLD_total       <- YLD_male + YLD_fem
+YLD_lower_total <- YLD_male_lower + YLD_fem_lower
+YLD_upper_total <- YLD_male_upper + YLD_fem_upper
+
+
+# Combined prevalence estimates downloaded from GBD
 prev_total <- 194510.88289338743 + 122399.73795153094
-prev_lower_total <- 169049.8026957066 + 111088.08159363415
-prev_upper_total <- 211790.44277738212 + 134597.21198640313
 
+prev_lower_total <- 169049.8026957066 +
+  111088.08159363415
+
+prev_upper_total <- 211790.44277738212 +
+  134597.21198640313
+
+
+# Average effective disability-weight estimates
 DW_mode <- YLD_total / prev_total
-DW_min <- YLD_lower_total / prev_upper_total
-DW_max <- YLD_upper_total / prev_lower_total
+DW_min  <- YLD_lower_total / prev_upper_total
+DW_max  <- YLD_upper_total / prev_lower_total
 
 DW_mode
 DW_min
 DW_max
+
+
+# Add sex-specific central and uncertainty estimates to dataframe
+df <- df %>%
+  mutate(
+    YLD_mode = case_when(
+      str_detect(group, "^Female") ~ YLD_fem,
+      str_detect(group, "^Male")   ~ YLD_male,
+      TRUE ~ NA_real_
+    ),
+    YLD_lower = case_when(
+      str_detect(group, "^Female") ~ YLD_fem_lower,
+      str_detect(group, "^Male")   ~ YLD_male_lower,
+      TRUE ~ NA_real_
+    ),
+    YLD_upper = case_when(
+      str_detect(group, "^Female") ~ YLD_fem_upper,
+      str_detect(group, "^Male")   ~ YLD_male_upper,
+      TRUE ~ NA_real_
+    )
+  )
 ```
 
 ## Helper functions
@@ -381,54 +403,63 @@ rpert <- function(n, min, mode, max) {
 run_mc_row_daly_korea_simple <- function(
   i_diabetes, median_dk, p_detectable_dk,
   D_years, deaths, seyll,
+  YLD_mode,
+  YLD_lower,
+  YLD_upper,
   DW_min, DW_mode, DW_max,
-  beta_hat, beta_se, x_ref,
-  baseline_uncertainty = FALSE
+  beta_hat, beta_se, x_ref
 ) {
 
-
   # uncertainty in slope
-  # draw one possible value of the dose-response slope from a normal distribution centered at the estimated slope, slightly different dose-repsonse slope every timr
+  # draw one possible value of the dose-response slope from a normal distribution centered at the estimated slope
   beta <- rnorm(1, mean = beta_hat, sd = beta_se)
 
-  # RR at average detectable Danish exposure, calculate the RR for a person whose exposure is the average detectable Danish exposure
-  # Danish detectable average exposure - Korean reference dose
-  # log(RR) = beta * (dose - reference dose)
-  # should maybe rename to rr_median
-  rr_mean <- exp(beta * (median_dk - x_ref))
+  # RR at average detectable Danish exposure
+  # log(RR) = beta * (Danish exposure - Korean reference dose)
+  rr_median <- exp(beta * (median_dk - x_ref))
 
   # PAF for only detectable population
-  PAF <- (p_detectable_dk * (rr_mean - 1)) / (1 + p_detectable_dk * (rr_mean - 1))
+  PAF <- (p_detectable_dk * (rr_median - 1)) /
+    (1 + p_detectable_dk * (rr_median - 1))
 
-  base_cases <- if (baseline_uncertainty) {
-    rpois(1, lambda = i_diabetes)
-  } else {
-    i_diabetes
-  }
+  # Attributable cases using incidence directly
+  AC <- PAF * i_diabetes
 
-  # Attributable cases
-  AC <- PAF * base_cases
-
-  # draw a disability weight (is also uncertain, therefore PERT)
+  # draw a disability weight
   DW <- rpert(1, DW_min, DW_mode, DW_max)
 
-  # years lived with disability
-  YLD <- AC * D_years * DW
+  # incidence-based attributable YLD
+  YLD_incidence <- AC * D_years * DW
+
+  # prevalence/GBD-based attributable YLD
+  YLD_total_draw <- rpert(
+    1,
+    min  = YLD_lower,
+    mode = YLD_mode,
+    max  = YLD_upper
+  )
+  
+  YLD_prevalence <- PAF * YLD_total_draw
+
   # attributable deaths
-  AD  <- PAF * deaths
+  AD <- PAF * deaths
+
   # years of life lost
   YLL <- AD * seyll
-  
-  DALY <- YLD + YLL
 
-  # return results
+  # DALYs using incidence-based and prevalence-based YLD
+  DALY_incidence <- YLD_incidence + YLL
+  DALY_prevalence <- YLD_prevalence + YLL
+
   tibble(
     PAF = PAF,
     AC = AC,
     AD = AD,
-    YLD = YLD,
+    YLD_incidence = YLD_incidence,
+    YLD_prevalence = YLD_prevalence,
     YLL = YLL,
-    DALY = DALY
+    DALY_incidence = DALY_incidence,
+    DALY_prevalence = DALY_prevalence
   )
 }
 ```
@@ -437,10 +468,12 @@ run_mc_row_daly_korea_simple <- function(
 run_mc_summary_daly_korea_simple <- function(
   i_diabetes, median_dk, p_detectable_dk,
   D_years, deaths, seyll,
+  YLD_mode,
+  YLD_lower,
+  YLD_upper,
   DW_min, DW_mode, DW_max,
   beta_hat, beta_se, x_ref,
-  nsim_outer = 3000,
-  baseline_uncertainty = FALSE
+  nsim_outer = 1000
 ) {
 
   sims <- map_dfr(seq_len(nsim_outer), ~
@@ -451,13 +484,15 @@ run_mc_summary_daly_korea_simple <- function(
       D_years = D_years,
       deaths = deaths,
       seyll = seyll,
+      YLD_mode = YLD_mode,
+      YLD_lower = YLD_lower,
+      YLD_upper = YLD_upper,
       DW_min = DW_min,
       DW_mode = DW_mode,
       DW_max = DW_max,
       beta_hat = beta_hat,
       beta_se = beta_se,
-      x_ref = x_ref,
-      baseline_uncertainty = baseline_uncertainty
+      x_ref = x_ref
     )
   )
 
@@ -474,17 +509,25 @@ run_mc_summary_daly_korea_simple <- function(
     AD_lo    = quantile(sims$AD, 0.025, na.rm = TRUE),
     AD_hi    = quantile(sims$AD, 0.975, na.rm = TRUE),
 
-    YLD_med  = median(sims$YLD, na.rm = TRUE),
-    YLD_lo   = quantile(sims$YLD, 0.025, na.rm = TRUE),
-    YLD_hi   = quantile(sims$YLD, 0.975, na.rm = TRUE),
+    YLD_incidence_med = median(sims$YLD_incidence, na.rm = TRUE),
+    YLD_incidence_lo  = quantile(sims$YLD_incidence, 0.025, na.rm = TRUE),
+    YLD_incidence_hi  = quantile(sims$YLD_incidence, 0.975, na.rm = TRUE),
+
+    YLD_prevalence_med = median(sims$YLD_prevalence, na.rm = TRUE),
+    YLD_prevalence_lo  = quantile(sims$YLD_prevalence, 0.025, na.rm = TRUE),
+    YLD_prevalence_hi  = quantile(sims$YLD_prevalence, 0.975, na.rm = TRUE),
 
     YLL_med  = median(sims$YLL, na.rm = TRUE),
     YLL_lo   = quantile(sims$YLL, 0.025, na.rm = TRUE),
     YLL_hi   = quantile(sims$YLL, 0.975, na.rm = TRUE),
 
-    DALY_med = median(sims$DALY, na.rm = TRUE),
-    DALY_lo  = quantile(sims$DALY, 0.025, na.rm = TRUE),
-    DALY_hi  = quantile(sims$DALY, 0.975, na.rm = TRUE)
+    DALY_incidence_med = median(sims$DALY_incidence, na.rm = TRUE),
+    DALY_incidence_lo  = quantile(sims$DALY_incidence, 0.025, na.rm = TRUE),
+    DALY_incidence_hi  = quantile(sims$DALY_incidence, 0.975, na.rm = TRUE),
+
+    DALY_prevalence_med = median(sims$DALY_prevalence, na.rm = TRUE),
+    DALY_prevalence_lo  = quantile(sims$DALY_prevalence, 0.025, na.rm = TRUE),
+    DALY_prevalence_hi  = quantile(sims$DALY_prevalence, 0.975, na.rm = TRUE)
   )
 }
 ```
@@ -493,7 +536,17 @@ run_mc_summary_daly_korea_simple <- function(
 results_daly_korea_simple <- df %>%
   mutate(
     mc = pmap(
-      list(i_diabetes, median_dk, p_detectable_dk, D_years, deaths, seyll),
+      list(
+        i_diabetes,
+        median_dk,
+        p_detectable_dk,
+        D_years,
+        deaths,
+        seyll,
+        YLD_mode,
+        YLD_lower,
+        YLD_upper
+      ),
       ~ run_mc_summary_daly_korea_simple(
         i_diabetes = ..1,
         median_dk = ..2,
@@ -501,14 +554,16 @@ results_daly_korea_simple <- df %>%
         D_years = ..4,
         deaths = ..5,
         seyll = ..6,
+        YLD_mode  = ..7,
+        YLD_lower = ..8,
+        YLD_upper = ..9,
         DW_min = DW_min,
         DW_mode = DW_mode,
         DW_max = DW_max,
         beta_hat = beta_hat,
         beta_se = beta_se,
         x_ref = x_ref,
-        nsim_outer = 3000,
-        baseline_uncertainty = FALSE
+        nsim_outer = 1000
       )
     )
   ) %>%
@@ -590,6 +645,8 @@ unique(df$mean_exp_dk)
 ## DALY plot
 
 ```{r}
+#| eval: false
+#| include: false
 # need to restructure data to long format
 daly_long <- results_daly_korea_simple %>%
   dplyr::select(group, YLD_med, YLL_med) %>%
@@ -644,4 +701,45 @@ x_dk <- rlnorm(
 hist(x_dk, breaks = 100)
 
 hist(x_dk[x_dk < 1], breaks = 100)
+```
+
+## MC TEST??
+
+```{r}
+ns <- c(1000, 3000, 5000, 10000)
+
+mc_test_both <- crossing(
+  group = df$group,
+  nsim = ns
+) %>%
+  mutate(
+    result = map2(group, nsim, function(g, n) {
+      
+      test_row <- df %>%
+        filter(group == g) %>%
+        slice(1)
+      
+      set.seed(123)
+      
+      run_mc_summary_daly_korea_simple(
+        i_diabetes = test_row$i_diabetes,
+        median_dk = test_row$median_dk,
+        p_detectable_dk = test_row$p_detectable_dk,
+        D_years = test_row$D_years,
+        deaths = test_row$deaths,
+        seyll = test_row$seyll,
+        YLD_mode = test_row$YLD_mode,
+        YLD_lower = test_row$YLD_lower,
+        YLD_upper = test_row$YLD_upper,
+        DW_min = DW_min,
+        DW_mode = DW_mode,
+        DW_max = DW_max,
+        beta_hat = beta_hat,
+        beta_se = beta_se,
+        x_ref = x_ref,
+        nsim_outer = n
+      )
+    })
+  ) %>%
+  unnest(result)
 ```

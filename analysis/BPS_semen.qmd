@@ -105,7 +105,7 @@ df <- read_excel("/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/data/MEN B
     sdlog_dk           = (log(P75) - log(P25)) / (qnorm(0.75) - qnorm(0.25)),
     p_detectable_dk    = 1 - plnorm(LOD, meanlog_dk, sdlog_dk),
     mean_exp_dk        = exp(meanlog_dk + 0.5 * sdlog_dk^2),  # arithmetic mean of full distribution on log scale
-    median_dk          = P50  
+    median_dk          = P50 # in use since data is skewed 
   )
 ```
 
@@ -193,8 +193,7 @@ study_dat <- study_dat %>%
 fit_lin <- lm(
   logrr ~ 0 + dose_c,
   data = study_dat[2:4, ],
-  weights = 1 / study_dat$se[2:4]^2
-)
+  weights = 1 / study_dat$se[2:4]^2) # smaller SE -> larger weight -> more influence
 
 beta_hat <- unname(coef(fit_lin)["dose_c"])
 beta_se  <- summary(fit_lin)$coefficients["dose_c", "Std. Error"]
@@ -300,6 +299,12 @@ dw_test <- 78.41/12120.59
 # NO YLL SINCE INFERTILITY DOES NOT CAUSE DEATH
 # YLD = AC * DW * D
 # NO DURATION IN THIS CASE
+
+
+## GBD YLD inputs: male infertility, Denmark, 15-49, 2023
+YLD_total_mode  <- 78.41
+YLD_total_lower <- 25.71
+YLD_total_upper <- 180.01
 ```
 
 ## PERT
@@ -320,6 +325,7 @@ rpert <- function(n, min, mode, max) {
 run_mc_row_semen <- function(
   p_detectable_dk, median_dk,
   prevalence_mode, prevalence_lower, prevalence_upper,
+  YLD_total_mode, YLD_total_lower, YLD_total_upper,
   DW_min, DW_mode, DW_max,
   beta_hat, beta_se, x_ref
 ) {
@@ -333,7 +339,11 @@ run_mc_row_semen <- function(
 
   # PAF for poor motility
   PAF_motility <- (p_detectable_dk * (rr_motility - 1)) /
-                  (1 + p_detectable_dk * (rr_motility - 1))
+    (1 + p_detectable_dk * (rr_motility - 1))
+  
+  # IS THIS THE WAY TO DO IT?
+  # attributable poor motility cases
+  # AC_motility <- PAF_motility * p0_motility_dk * N_men_15_49
 
   # mediation fraction: proportion of male infertility driven by poor motility
   # CONSERVATIVE APPROACH
@@ -346,11 +356,12 @@ run_mc_row_semen <- function(
   PAF_infertility <- PAF_motility * med_frac
 
   # prevalence uncertainty
-  # does this align with the correct approach?
-  prev <- rpert(1,
-                min  = prevalence_lower,
-                mode = prevalence_mode,
-                max  = prevalence_upper)
+  prev <- rpert(
+    1,
+    min  = prevalence_lower,
+    mode = prevalence_mode,
+    max  = prevalence_upper
+  )
 
   # attributable cases
   AC <- PAF_infertility * prev
@@ -358,27 +369,47 @@ run_mc_row_semen <- function(
   # disability weight uncertainty
   DW <- rpert(1, DW_min, DW_mode, DW_max)
 
-  # YLD (prevalence-based, no duration multiplier)
-  YLD  <- AC * DW
-  DALY <- YLD   # no YLL for male infertility
+  # reconstructed prevalence-based YLD
+  # estimated as attributable prevalent infertility cases * disability weight
+  YLD_reconstructed <- AC * DW
+
+  # GBD top-down YLD uncertainty
+  # GBD YLD already includes disability weighting
+  YLD_total <- rpert(
+    1,
+    min  = YLD_total_lower,
+    mode = YLD_total_mode,
+    max  = YLD_total_upper
+  )
+
+  # GBD top-down attributable YLD
+  # do NOT multiply by DW again
+  YLD_gbd <- PAF_infertility * YLD_total
+
+  # no YLL since infertility does not cause death
+  DALY_reconstructed <- YLD_reconstructed
+  DALY_gbd <- YLD_gbd
 
   tibble(
-    PAF_motility    = PAF_motility,
-    PAF_infertility = PAF_infertility,
-    med_frac        = med_frac,
-    AC              = AC,
-    DW              = DW,
-    YLD             = YLD,
-    DALY            = DALY
+    PAF_motility       = PAF_motility,
+    PAF_infertility    = PAF_infertility,
+    med_frac           = med_frac,
+    AC                 = AC,
+    DW                 = DW,
+    YLD_reconstructed  = YLD_reconstructed,
+    YLD_gbd            = YLD_gbd,
+    DALY_reconstructed = DALY_reconstructed,
+    DALY_gbd           = DALY_gbd
   )
 }
 
 run_mc_summary_semen <- function(
   p_detectable_dk, median_dk,
   prevalence_mode, prevalence_lower, prevalence_upper,
+  YLD_total_mode, YLD_total_lower, YLD_total_upper,
   DW_min, DW_mode, DW_max,
   beta_hat, beta_se, x_ref,
-  nsim = 3000
+  nsim = 1000
 ) {
 
   sims <- map_dfr(seq_len(nsim), ~ run_mc_row_semen(
@@ -387,6 +418,9 @@ run_mc_summary_semen <- function(
     prevalence_mode  = prevalence_mode,
     prevalence_lower = prevalence_lower,
     prevalence_upper = prevalence_upper,
+    YLD_total_mode   = YLD_total_mode,
+    YLD_total_lower  = YLD_total_lower,
+    YLD_total_upper  = YLD_total_upper,
     DW_min           = DW_min,
     DW_mode          = DW_mode,
     DW_max           = DW_max,
@@ -408,13 +442,21 @@ run_mc_summary_semen <- function(
     AC_lo   = quantile(sims$AC, 0.025),
     AC_hi   = quantile(sims$AC, 0.975),
 
-    YLD_med  = median(sims$YLD),
-    YLD_lo   = quantile(sims$YLD, 0.025),
-    YLD_hi   = quantile(sims$YLD, 0.975),
+    YLD_reconstructed_med = median(sims$YLD_reconstructed),
+    YLD_reconstructed_lo  = quantile(sims$YLD_reconstructed, 0.025),
+    YLD_reconstructed_hi  = quantile(sims$YLD_reconstructed, 0.975),
 
-    DALY_med = median(sims$DALY),
-    DALY_lo  = quantile(sims$DALY, 0.025),
-    DALY_hi  = quantile(sims$DALY, 0.975)
+    YLD_gbd_med = median(sims$YLD_gbd),
+    YLD_gbd_lo  = quantile(sims$YLD_gbd, 0.025),
+    YLD_gbd_hi  = quantile(sims$YLD_gbd, 0.975),
+
+    DALY_reconstructed_med = median(sims$DALY_reconstructed),
+    DALY_reconstructed_lo  = quantile(sims$DALY_reconstructed, 0.025),
+    DALY_reconstructed_hi  = quantile(sims$DALY_reconstructed, 0.975),
+
+    DALY_gbd_med = median(sims$DALY_gbd),
+    DALY_gbd_lo  = quantile(sims$DALY_gbd, 0.025),
+    DALY_gbd_hi  = quantile(sims$DALY_gbd, 0.975)
   )
 }
 ```
@@ -430,13 +472,16 @@ results_semen <- df %>%
         prevalence_mode  = prevalence_mode,
         prevalence_lower = prevalence_lower,
         prevalence_upper = prevalence_upper,
+        YLD_total_mode   = YLD_total_mode,
+        YLD_total_lower  = YLD_total_lower,
+        YLD_total_upper  = YLD_total_upper,
         DW_min           = DW_min,
         DW_mode          = DW_mode,
         DW_max           = DW_max,
         beta_hat         = beta_hat,
         beta_se          = beta_se,
         x_ref            = x_ref,
-        nsim             = 3000
+        nsim             = 1000
       )
     )
   ) %>%
@@ -619,54 +664,123 @@ beta_motility_se
 # Danish exposure level
 median_dk <- df$median_dk
 x_ref <- dose_q1
+N_men_15_49 <- 1341884
 
-# Estimated BPS-related change in motility at Danish exposure
-# This is in percentage points
-# Danish BPS exposure is predicted to reduce progressive sperm motility by x percentage points
-delta_motility <- beta_motility * (median_dk - x_ref)
+run_mc_row_bottom_up_motility <- function(
+  data_app_mot,
+  median_dk,
+  beta_motility,
+  beta_motility_se,
+  x_ref,
+  N_men_15_49
+) {
 
+  # uncertainty in motility dose-response slope
+  beta_draw <- rnorm(1, mean = beta_motility, sd = beta_motility_se)
 
-delta_motility
+  # estimated BPS-related change in progressive motility
+  # this is in percentage points
+  delta_motility <- beta_draw * (median_dk - x_ref)
+
+  # counterfactual motility without BPS exposure
+  data_shifted <- data_app_mot %>%
+    mutate(
+      observed_motility = prog_motility_pct,
+
+      # if delta_motility is negative, removing BPS increases motility
+      no_bps_motility = observed_motility - delta_motility,
+
+      # keep values between 0 and 100
+      no_bps_motility = pmin(pmax(no_bps_motility, 0), 100)
+    )
+
+  # proportion below WHO 32% threshold
+  p_below_observed <- mean(data_shifted$observed_motility < 32)
+  p_below_no_bps   <- mean(data_shifted$no_bps_motility < 32)
+
+  # attributable proportion below threshold
+  excess_p_below <- p_below_observed - p_below_no_bps
+
+  # avoid negative attributable cases if one simulation gives opposite direction
+  excess_p_below <- max(excess_p_below, 0)
+
+  # attributable poor motility cases
+  AC_poor_motility <- excess_p_below * N_men_15_49
+
+  tibble(
+    delta_motility = delta_motility,
+    p_below_observed = p_below_observed,
+    p_below_no_bps = p_below_no_bps,
+    excess_p_below = excess_p_below,
+    AC_poor_motility = AC_poor_motility
+  )
+}
 ```
 
 ### what would motility look like with no BPS exposure?
 
 ```{r}
-data_app_mot_bu <- data_app_mot %>%
-  mutate(
-    observed_motility = prog_motility_pct,
+run_mc_summary_bottom_up_motility <- function(
+  data_app_mot,
+  median_dk,
+  beta_motility,
+  beta_motility_se,
+  x_ref,
+  N_men_15_49,
+  nsim = 1000
+) {
 
-    # If delta_motility is negative, removing BPS increases motility
-    no_bps_motility = observed_motility - delta_motility,
+  sims <- map_dfr(seq_len(nsim), ~ run_mc_row_bottom_up_motility(
+    data_app_mot = data_app_mot,
+    median_dk = median_dk,
+    beta_motility = beta_motility,
+    beta_motility_se = beta_motility_se,
+    x_ref = x_ref,
+    N_men_15_49 = N_men_15_49
+  ))
 
-    # keep values between 0 and 100
-    no_bps_motility = pmin(pmax(no_bps_motility, 0), 100)
+  tibble(
+    delta_motility_med = median(sims$delta_motility),
+    delta_motility_lo  = quantile(sims$delta_motility, 0.025),
+    delta_motility_hi  = quantile(sims$delta_motility, 0.975),
+
+    excess_p_below_med = median(sims$excess_p_below),
+    excess_p_below_lo  = quantile(sims$excess_p_below, 0.025),
+    excess_p_below_hi  = quantile(sims$excess_p_below, 0.975),
+
+    AC_poor_motility_med = median(sims$AC_poor_motility),
+    AC_poor_motility_lo  = quantile(sims$AC_poor_motility, 0.025),
+    AC_poor_motility_hi  = quantile(sims$AC_poor_motility, 0.975)
   )
+}
 
 
-# CALCULATING THE EFFECT
+set.seed(123)
 
-p_below_observed <- mean(data_app_mot_bu$observed_motility < 32)
-p_below_no_bps   <- mean(data_app_mot_bu$no_bps_motility < 32)
+results_bottom_up_motility <- run_mc_summary_bottom_up_motility(
+  data_app_mot = data_app_mot,
+  median_dk = df$median_dk,
+  beta_motility = beta_motility,
+  beta_motility_se = beta_motility_se,
+  x_ref = x_ref,
+  N_men_15_49 = N_men_15_49,
+  nsim = 1000
+)
 
-excess_p_below <- p_below_observed - p_below_no_bps
-
-p_below_observed
-p_below_no_bps
-excess_p_below
-
-# SCALED TO DANISH MEN?
-
-N_men_15_49 <- 1341884
-
-AC_bu <- excess_p_below * N_men_15_49
-
-AC_bu
+results_bottom_up_motility
 ```
 
 ### plotting :-)
 
 ```{r}
+data_app_mot_bu <- data_app_mot %>%
+  mutate(
+    observed_motility = prog_motility_pct,
+    no_bps_motility = observed_motility - results_bottom_up_motility$delta_motility_med,
+    no_bps_motility = pmin(pmax(no_bps_motility, 0), 100)
+  )
+
+
 data_app_plot_bu <- data_app_mot_bu %>%
   dplyr::select(
     Observed = observed_motility,
@@ -828,4 +942,78 @@ x_dk <- rlnorm(
 hist(x_dk, breaks = 100)
 
 hist(x_dk[x_dk < 1], breaks = 100)
+```
+
+## MC TEST!
+
+```{r}
+ns <- c(1000, 3000, 5000, 10000)
+
+mc_test_semen <- crossing(
+  Year = df$Year,
+  nsim = ns
+) %>%
+  mutate(
+    result = map2(Year, nsim, function(y, n) {
+      
+      test_row <- df %>%
+        filter(Year == y) %>%
+        slice(1)
+      
+      set.seed(123)
+      
+      run_mc_summary_semen(
+  p_detectable_dk  = test_row$p_detectable_dk,
+  median_dk        = test_row$median_dk,
+  prevalence_mode  = prevalence_mode,
+  prevalence_lower = prevalence_lower,
+  prevalence_upper = prevalence_upper,
+  YLD_total_mode   = YLD_total_mode,
+  YLD_total_lower  = YLD_total_lower,
+  YLD_total_upper  = YLD_total_upper,
+  DW_min           = DW_min,
+  DW_mode          = DW_mode,
+  DW_max           = DW_max,
+  beta_hat         = beta_hat,
+  beta_se          = beta_se,
+  x_ref            = x_ref,
+  nsim             = n
+)
+    })
+  ) %>%
+  unnest(result)
+
+mc_test_semen
+```
+
+```{r}
+ns <- c(1000, 3000, 5000, 10000)
+
+mc_test_bottom_up_motility <- crossing(
+  Year = df$Year,
+  nsim = ns
+) %>%
+  mutate(
+    result = map2(Year, nsim, function(y, n) {
+      
+      test_row <- df %>%
+        filter(Year == y) %>%
+        slice(1)
+      
+      set.seed(123)
+      
+      run_mc_summary_bottom_up_motility(
+        data_app_mot = data_app_mot,
+        median_dk = test_row$median_dk,
+        beta_motility = beta_motility,
+        beta_motility_se = beta_motility_se,
+        x_ref = x_ref,
+        N_men_15_49 = N_men_15_49,
+        nsim = n
+      )
+    })
+  ) %>%
+  unnest(result)
+
+mc_test_bottom_up_motility
 ```

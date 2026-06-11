@@ -1,0 +1,124 @@
+---
+title: "BPA analog"
+format: html
+editor: visual
+---
+
+# Comparing potency
+
+## Libraries
+
+```{r}
+library(tidyverse)
+```
+
+### Diabetes
+
+```{r}
+# Differences in HRs/ORs reported
+# Relative potency calculation
+
+# BPS
+# Korea ORs
+# BPS relative potency values
+
+RP_BPS_values <- c(
+  Korea = log(2.13) / log(1.44),
+  
+  France_Q2 = log(2.81) / log(2.56),
+  France_Q3 = log(2.81) / log(2.35),
+  France_Q4 = log(2.81) / log(1.56)
+)
+
+RP_BPS <- c(
+  lower = min(RP_BPS_values),
+  median = median(RP_BPS_values),
+  upper = max(RP_BPS_values)
+)
+
+
+
+# BPF
+# Korea ORs
+log(1.43)/log(1.44) # = 0.9808891
+
+
+```
+
+```{r}
+# Scenarios
+RP_BPS
+# mean and median are almost the same
+
+RP_BPF <- c(0, 0.5, 1)
+```
+
+```{r}
+
+# Bisphenol concentrations from fathers
+BPA_f <- 1.46
+BPS_f <- 0.29
+BPF_f <- 0.23
+
+# Bisphenol concentrations from mothers
+BPA_m <- 0.61
+BPS_m <- 0.18
+BPF_m <- 0.05
+
+
+df_bisphenol_RP <- bind_rows(
+  tibble(
+    group = "Fathers",
+    analog = "BPS",
+    BPA_original = BPA_f,
+    replacement_exposure = BPA_f,
+    RP = RP_BPS
+  ),
+  tibble(
+    group = "Fathers",
+    analog = "BPF",
+    BPA_original = BPA_f,
+    replacement_exposure = BPA_f,
+    RP = RP_BPF
+  ),
+  tibble(
+    group = "Mothers",
+    analog = "BPS",
+    BPA_original = BPA_m,
+    replacement_exposure = BPA_m,
+    RP = RP_BPS
+  ),
+  tibble(
+    group = "Mothers",
+    analog = "BPF",
+    BPA_original = BPA_m,
+    replacement_exposure = BPA_m,
+    RP = RP_BPF
+  )
+) %>%
+  mutate(
+    BPA_equivalent_after_replacement = replacement_exposure * RP,
+    pct_change_vs_BPA =
+      ((BPA_equivalent_after_replacement - BPA_original) / BPA_original) * 100
+  )
+
+```
+
+```{r}
+df_bisphenol_RP <- bind_rows(
+  tibble(group = "Fathers", analog = "BPS",
+         BPA_original = BPA_f, analog_current = BPS_f, RP = RP_BPS),
+  tibble(group = "Fathers", analog = "BPF",
+         BPA_original = BPA_f, analog_current = BPF_f, RP = RP_BPF),
+  tibble(group = "Mothers", analog = "BPS",
+         BPA_original = BPA_m, analog_current = BPS_m, RP = RP_BPS),
+  tibble(group = "Mothers", analog = "BPF",
+         BPA_original = BPA_m, analog_current = BPF_m, RP = RP_BPF)
+) %>%
+  mutate(
+    baseline_BPAeq = BPA_original + analog_current * RP,
+    replacement_BPAeq = (BPA_original + analog_current) * RP,
+    pct_change_vs_baseline =
+      ((replacement_BPAeq - baseline_BPAeq) / baseline_BPAeq) * 100
+  )
+```
