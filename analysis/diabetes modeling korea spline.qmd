@@ -12,6 +12,7 @@ library(readxl)
 library(rriskDistributions)
 library(writexl)
 library(MASS)
+library(splines)
 ```
 
 ## Importing data
@@ -97,6 +98,7 @@ study_dat
 
 ```{r}
 # Give the reference point a very large weight so the curve stays anchored at (dose_c = 0, logrr = 0)
+# ALSO USED IN THE SPLINE MODEL!
 study_dat2 <- study_dat %>%
   mutate(w = c(1e6, 1 / se_t2^2, 1 / se_t3^2))
 
@@ -518,7 +520,6 @@ ggsave(
 ## plotting spline model
 
 ```{r}
-library(splines)
 
 fit_spline <- lm(
   logrr ~ 0 + ns(dose_c, df = 2),
@@ -526,7 +527,9 @@ fit_spline <- lm(
   weights = w
 )
 
+# estimated values
 coef_spline <- coef(fit_spline)
+# uncertainties
 vcov_spline <- vcov(fit_spline)
 
 summary(fit_spline)

@@ -208,67 +208,117 @@ summary(fit_lin)
 
 ```{r}
 # making a sequence of dose values for plotting
-# Model uncertainty added
+# model uncertainty added
 pred_grid <- tibble(
-  dose = seq(min(study_dat$dose), max(study_dat$dose), length.out = 100)
+  dose = seq(
+    min(study_dat$dose),
+    max(max(study_dat$dose), max(df$median_dk, na.rm = TRUE)),
+    length.out = 100
+  )
 ) %>%
-  mutate(dose_c = dose - dose_q1) %>%
+  mutate(
+    dose_c = dose - dose_q1
+  ) %>%
   bind_cols(
-    predict(fit_lin, newdata = ., interval = "confidence", level = 0.95) %>%
+    predict(
+      fit_lin,
+      newdata = .,
+      interval = "confidence",
+      level = 0.95
+    ) %>%
       as_tibble() %>%
-      rename(logrr_fit = fit, logrr_lwr = lwr, logrr_upr = upr)
+      rename(
+        logrr_fit = fit,
+        logrr_lwr = lwr,
+        logrr_upr = upr
+      )
   )
 
 # plot
 p_logrr <- ggplot() +
-  # Model confidence band
+  # model confidence band
   geom_ribbon(
     data = pred_grid,
-    aes(x = dose, ymin = logrr_lwr, ymax = logrr_upr),
-    fill = "#045A8DFF",
+    aes(
+      x = dose,
+      ymin = logrr_lwr,
+      ymax = logrr_upr
+    ),
+    fill = "#756BB1",
     alpha = 0.15
   ) +
-  # Model fit line
+  # model fit line
   geom_line(
     data = pred_grid,
-    aes(x = dose, y = logrr_fit),
-    color = "#045A8DFF",
+    aes(
+      x = dose,
+      y = logrr_fit
+    ),
+    color = "#756BB1",
     linewidth = 1
   ) +
-  # Data points with error bars  (requires logrr_lower / logrr_upper in study_dat)
+  # observed confidence intervals
   geom_errorbar(
     data = study_dat,
-    aes(x = dose, ymin = logrr_lower, ymax = logrr_upper),
-    color = "#045A8DFF",
+    aes(
+      x = dose,
+      ymin = logrr_lower,
+      ymax = logrr_upper
+    ),
+    color = "#756BB1",
     width = 0.02,
-    linewidth = 0.6
+    linewidth = 0.6,
+    na.rm = TRUE
   ) +
+  # observed estimates
   geom_point(
     data = study_dat,
-    aes(x = dose, y = logrr),
-    color = "#045A8DFF",
+    aes(
+      x = dose,
+      y = logrr
+    ),
+    color = "#756BB1",
     size = 3
   ) +
+  # horizontal line showing no association
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed",
+    linewidth = 0.4,
+    color = "grey40"
+  ) +
+  # Danish median BPS concentration
+  geom_vline(
+    xintercept = unique(df$median_dk),
+    linetype = "dashed",
+    linewidth = 0.4,
+    color = "grey40"
+  ) +
   labs(
-    title = "BPS and motility risk",
+    title = "Linear dose-response model for BPS\nand poor sperm motility risk",
     x = "Urinary BPS concentration",
     y = "log(OR)"
   ) +
-  theme_classic() +
-  theme(plot.title = element_text(size = 16, face = "bold"))
+  theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(
+      size = 16,
+      face = "bold"
+    ),
+    axis.title = element_text(size = 15),
+    axis.text = element_text(size = 13)
+  )
 
 p_logrr
 
 # saving plot
 ggsave(
-  filename = "logrr_linear_model_bps_semen.png",
+  filename = "../figures/logrr_linear_model_bps_semen.png",
   plot = p_logrr,
   width = 7,
   height = 5,
   dpi = 300
 )
-
-
 
 
 ```
@@ -371,6 +421,7 @@ run_mc_row_semen <- function(
 
   # reconstructed prevalence-based YLD
   # estimated as attributable prevalent infertility cases * disability weight
+  # FINE TO CALCULATE THIS BUT OG WITH THE YLD GBD METHOD!
   YLD_reconstructed <- AC * DW
 
   # GBD top-down YLD uncertainty
@@ -987,6 +1038,8 @@ mc_test_semen
 ```
 
 ```{r}
+#| eval: false
+#| include: false
 ns <- c(1000, 3000, 5000, 10000)
 
 mc_test_bottom_up_motility <- crossing(
@@ -1016,4 +1069,98 @@ mc_test_bottom_up_motility <- crossing(
   unnest(result)
 
 mc_test_bottom_up_motility
+```
+
+```{r}
+pred_grid_motility <- tibble(
+  dose = seq(
+    min(study_dat_cont$dose),
+    max(max(study_dat_cont$dose), max(df$median_dk, na.rm = TRUE)),
+    length.out = 100
+  )
+) %>%
+  mutate(
+    dose_c = dose - dose_q1
+  ) %>%
+  bind_cols(
+    predict(
+      fit_motility,
+      newdata = .,
+      interval = "confidence",
+      level = 0.95
+    ) %>%
+      as_tibble() %>%
+      rename(
+        motility_fit = fit,
+        motility_lwr = lwr,
+        motility_upr = upr
+      )
+  )
+
+study_dat_cont_plot <- study_dat_cont %>%
+  mutate(
+    motility_lower = motility_change_pp - 1.96 * se,
+    motility_upper = motility_change_pp + 1.96 * se
+  )
+
+p_motility_model <- ggplot() +
+  geom_ribbon(
+    data = pred_grid_motility,
+    aes(x = dose, ymin = motility_lwr, ymax = motility_upr),
+    fill = "#756BB1",
+    alpha = 0.15
+  ) +
+  geom_line(
+    data = pred_grid_motility,
+    aes(x = dose, y = motility_fit),
+    color = "#756BB1",
+    linewidth = 1
+  ) +
+  geom_errorbar(
+    data = study_dat_cont_plot,
+    aes(x = dose, ymin = motility_lower, ymax = motility_upper),
+    color = "#756BB1",
+    width = 0.02,
+    linewidth = 0.6,
+    na.rm = TRUE
+  ) +
+  geom_point(
+    data = study_dat_cont_plot,
+    aes(x = dose, y = motility_change_pp),
+    color = "#756BB1",
+    size = 3
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed",
+    linewidth = 0.4,
+    color = "grey40"
+  ) +
+  geom_vline(
+    xintercept = unique(df$median_dk),
+    linetype = "dashed",
+    linewidth = 0.4,
+    color = "grey40"
+  ) +
+  labs(
+    title = "Linear dose-response model for BPS\nand progressive sperm motility",
+    x = "Urinary BPS concentration",
+    y = "Change in progressive motility (%)"
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 15),
+    axis.text = element_text(size = 13)
+  )
+
+p_motility_model
+
+ggsave(
+  filename = "../figures/linear_model_bps_motility_change.png",
+  plot = p_motility_model,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
 ```
