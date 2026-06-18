@@ -75,10 +75,13 @@ x_kor <- rlnorm(1e6, meanlog = meanlog_kor, sdlog = sdlog_kor)
 cut1 <- qlnorm(1/3, meanlog = meanlog_kor, sdlog = sdlog_kor)
 cut2 <- qlnorm(2/3, meanlog = meanlog_kor, sdlog = sdlog_kor)
 
-# Median dose within each tertile
+# Mean dose within each tertile
 dose_t1 <- mean(x_kor[x_kor <= cut1])
 dose_t2 <- mean(x_kor[x_kor > cut1 & x_kor <= cut2])
 dose_t3 <- mean(x_kor[x_kor > cut2])
+
+df <- df %>%
+  mutate(med_cap = dose_t3)
 ```
 
 ## Build dose-response dataset
@@ -253,7 +256,7 @@ rpert <- function(n, min, mode, max) {
 
 ```{r}
 run_mc_row_daly_korea_quad <- function(
-    i_diabetes, median_dk, p_detectable_dk,
+    i_diabetes, med_cap, p_detectable_dk,
     D_years, deaths, seyll,
     YLD_sex,
     DW_min, DW_mode, DW_max,
@@ -267,7 +270,7 @@ run_mc_row_daly_korea_quad <- function(
   b2 <- beta_draw[2]
   
   # centered Danish exposure
-  dose_c_dk <- median_dk - dose_t1
+  dose_c_dk <- med_cap - dose_t1
   
   # quadratic exposure-response:
   # log(RR) = b1*x + b2*x^2
@@ -319,7 +322,7 @@ run_mc_row_daly_korea_quad <- function(
 
 ```{r}
 run_mc_summary_daly_korea_quad <- function(
-    i_diabetes, median_dk, p_detectable_dk,
+    i_diabetes, med_cap, p_detectable_dk,
     D_years, deaths, seyll,
     YLD_sex,
     DW_min, DW_mode, DW_max,
@@ -330,7 +333,7 @@ run_mc_summary_daly_korea_quad <- function(
   sims <- map_dfr(seq_len(nsim_outer), ~
                     run_mc_row_daly_korea_quad(
                       i_diabetes = i_diabetes,
-                      median_dk = median_dk,
+                      med_cap = med_cap,
                       p_detectable_dk = p_detectable_dk,
                       D_years = D_years,
                       deaths = deaths,
@@ -389,7 +392,7 @@ results_daly_korea_quad <- df %>%
     mc = pmap(
       list(
         i_diabetes,
-        median_dk,
+        med_cap,
         p_detectable_dk,
         D_years,
         deaths,
@@ -398,7 +401,7 @@ results_daly_korea_quad <- df %>%
       ),
       ~ run_mc_summary_daly_korea_quad(
         i_diabetes = ..1,
-        median_dk = ..2,
+        med_cap = ..2,
         p_detectable_dk = ..3,
         D_years = ..4,
         deaths = ..5,
@@ -424,7 +427,7 @@ results_daly_korea_quad
 ```{r}
 # Prediction grid for quadratic model
 pred_grid_quad <- tibble(
-  dose = seq(min(study_dat$dose), max(df$median_dk), length.out = 100)
+  dose = seq(min(study_dat$dose), max(df$med_cap), length.out = 100)
 ) %>%
   mutate(dose_c = dose - dose_t1) %>%
   bind_cols(
@@ -480,7 +483,7 @@ p_quad <- ggplot() +
   geom_segment(
     aes(
       x = min(study_dat$dose),
-      xend = max(df$median_dk),
+      xend = max(df$med_cap),
       y = 0,
       yend = 0
     ),
@@ -489,7 +492,7 @@ p_quad <- ggplot() +
     color = "grey40"
   ) +
   geom_vline(
-    xintercept = unique(df$median_dk),
+    xintercept = unique(df$med_cap),
     linetype = "dashed",
     linewidth = 0.4,
     color = "grey40"
@@ -538,7 +541,7 @@ summary(fit_spline)
 pred_grid_spline <- tibble(
   dose = seq(
     min(study_dat$dose),
-    max(df$median_dk),
+    max(df$med_cap),
     length.out = 100
   )
 ) %>%
@@ -612,7 +615,7 @@ p_spline <- ggplot() +
   geom_segment(
     aes(
       x = min(study_dat$dose),
-      xend = max(df$median_dk),
+      xend = max(df$med_cap),
       y = 0,
       yend = 0
     ),
@@ -621,7 +624,7 @@ p_spline <- ggplot() +
     color = "grey40"
   ) +
   geom_vline(
-    xintercept = unique(df$median_dk),
+    xintercept = unique(df$med_cap),
     linetype = "dashed",
     linewidth = 0.4,
     color = "grey40"
@@ -656,7 +659,7 @@ ggsave(
 
 ```{r}
 run_mc_row_daly_korea_spline <- function(
-    i_diabetes, median_dk, p_detectable_dk,
+    i_diabetes, med_cap, p_detectable_dk,
     D_years, deaths, seyll,
     YLD_sex,
     DW_min, DW_mode, DW_max,
@@ -667,7 +670,7 @@ run_mc_row_daly_korea_spline <- function(
   beta_draw <- MASS::mvrnorm(1, mu = coef_spline, Sigma = vcov_spline)
   
   # centered Danish exposure
-  dose_c_dk <- median_dk - dose_t1
+  dose_c_dk <- med_cap - dose_t1
   
   # create spline design matrix for Danish dose
   new_dat <- tibble(dose_c = dose_c_dk)
@@ -724,7 +727,7 @@ run_mc_row_daly_korea_spline <- function(
 
 ```{r}
 run_mc_summary_daly_korea_spline <- function(
-    i_diabetes, median_dk, p_detectable_dk,
+    i_diabetes, med_cap, p_detectable_dk,
     D_years, deaths, seyll,
     YLD_sex,
     DW_min, DW_mode, DW_max,
@@ -735,7 +738,7 @@ run_mc_summary_daly_korea_spline <- function(
   sims <- map_dfr(seq_len(nsim_outer), ~
                     run_mc_row_daly_korea_spline(
                       i_diabetes = i_diabetes,
-                      median_dk = median_dk,
+                      med_cap = med_cap,
                       p_detectable_dk = p_detectable_dk,
                       D_years = D_years,
                       deaths = deaths,
@@ -793,7 +796,7 @@ results_daly_korea_spline <- df %>%
     mc = pmap(
       list(
         i_diabetes,
-        median_dk,
+        med_cap,
         p_detectable_dk,
         D_years,
         deaths,
@@ -802,7 +805,7 @@ results_daly_korea_spline <- df %>%
       ),
       ~ run_mc_summary_daly_korea_spline(
         i_diabetes = ..1,
-        median_dk = ..2,
+        med_cap = ..2,
         p_detectable_dk = ..3,
         D_years = ..4,
         deaths = ..5,
@@ -849,7 +852,7 @@ dose_scale <- max(study_dat2$dose_c, na.rm = TRUE)
 pred_grid_mono <- tibble(
   dose = seq(
     min(study_dat2$dose),
-    max(df$median_dk),
+    max(df$med_cap),
     length.out = 200
   )
 ) %>%
@@ -874,7 +877,7 @@ p_mono_spline <- ggplot(pred_grid_mono, aes(x = dose, y = rr_fit)) +
     color = "#54278f"
   ) +
   geom_vline(
-    xintercept = unique(df$median_dk),
+    xintercept = unique(df$med_cap),
     linetype = "dashed"
   ) +
   labs(
@@ -891,7 +894,7 @@ p_mono_spline
 ```
 
 ```{r}
-xmax <- max(df$median_dk, study_dat2$dose, na.rm = TRUE) - dose_t1
+xmax <- max(df$med_cap, study_dat2$dose, na.rm = TRUE) - dose_t1
 
 x_constraint <- seq(0, xmax, length.out = 200)
 
@@ -926,7 +929,7 @@ coef_mono_quad
 pred_grid_mono_quad <- tibble(
   dose = seq(
     min(study_dat2$dose),
-    max(df$median_dk, study_dat2$dose, na.rm = TRUE),
+    max(df$med_cap, study_dat2$dose, na.rm = TRUE),
     length.out = 200
   )
 ) %>%
@@ -946,7 +949,7 @@ p_mono_quad <- ggplot(pred_grid_mono_quad, aes(x = dose, y = rr_fit)) +
     color = "#045A8DFF"
   ) +
   geom_vline(
-    xintercept = unique(df$median_dk),
+    xintercept = unique(df$med_cap),
     linetype = "dashed"
   ) +
   labs(

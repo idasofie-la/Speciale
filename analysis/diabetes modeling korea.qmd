@@ -87,6 +87,12 @@ dose_t1 <- mean(x_kor[x_kor <= cut1])
 dose_t2 <- mean(x_kor[x_kor > cut1 & x_kor <= cut2])
 dose_t3 <- mean(x_kor[x_kor > cut2])
 
+# which value should I use to cap?
+# dose_t3_med <- median(x_kor[x_kor > cut2])
+
+df <- df %>%
+  mutate(med_cap = dose_t3)
+
 
 ## Build dose-response dataset and fit linear trend ##
 # dose = representative exposures (medians) for the 3 tertiles
@@ -574,7 +580,7 @@ results_daly_korea_simple
 
 ```{r}
 getwd()
-write_xlsx(results_daly_korea_simple, "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_simple.xlsx")
+write_xlsx(results_daly_korea_simple, "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_simple_CAPPED.xlsx")
 ```
 
 ## Checking percentiles
