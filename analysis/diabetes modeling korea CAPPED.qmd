@@ -151,7 +151,7 @@ study_dat
 # making a sequence of dose values for plotting
 # now also adding Model uncertainty 
 pred_grid <- tibble(
-  dose = seq(min(study_dat$dose), max(df$median_dk), length.out = 100)
+  dose = seq(min(study_dat$dose), max(df$med_cap), length.out = 100)
 ) %>%
   mutate(dose_c = dose - dose_t1) %>%
   bind_cols(
@@ -191,7 +191,7 @@ p_logrr
 
 # saving plot
 #ggsave(
-  #filename = "logrr_linear_model_korea.png",
+  #filename = "logrr_linear_model_korea_CAPPED.png",
   #plot = p_logrr,
   #width = 7,
   #height = 5,
@@ -231,7 +231,7 @@ p_logrr_new <- ggplot() +
   geom_segment(
   aes(
     x = min(study_dat$dose),
-    xend = max(df$median_dk),
+    xend = max(df$med_cap),
     y = 0,
     yend = 0
   ),
@@ -240,13 +240,13 @@ p_logrr_new <- ggplot() +
   color = "grey40"
   ) +
   geom_vline(
-  xintercept = unique(df$median_dk),
+  xintercept = unique(df$med_cap),
   linetype = "dashed",
   linewidth = 0.4,
   color = "grey40"
   ) +
   labs(
-    title = "Linear dose-response model for BPS and T2D risk",
+    title = "Linear dose-response model for BPS and T2D risk \n(capped)",
     x = "Urinary BPS concentration",
     y = "log(OR)"
   ) +
@@ -261,7 +261,7 @@ p_logrr_new
 
 # saving plot
 ggsave(
-  filename = "../figures/NEW_logrr_linear_model_korea.png",
+  filename = "../figures/NEW_logrr_linear_model_korea_CAPPED.png",
   plot = p_logrr_new,
   width = 7,
   height = 5,
@@ -390,16 +390,13 @@ df <- df %>%
     )
   )
 
-
-prev_f <- 122399.73795153094
-prev_m <- 194510.88289338743
-
+prev_f       <- 122399.73795153094
 prev_f_lower <- 111088.08159363415
-prev_m_lower <- 169049.8026957066
-
 prev_f_upper <- 134597.21198640313
-prev_m_upper <- 211790.44277738212
 
+prev_m       <- 194510.88289338743
+prev_m_lower <- 169049.8026957066
+prev_m_upper <- 211790.44277738212
 
 df <- df %>%
   mutate(
@@ -437,13 +434,13 @@ rpert <- function(n, min, mode, max) {
 
 ```{r}
 run_mc_row_daly_korea_simple <- function(
-    i_diabetes, prev_mode, prev_lower, prev_upper, median_dk, p_detectable_dk,
-    D_years, deaths, seyll,
-    YLD_mode,
-    YLD_lower,
-    YLD_upper,
-    DW_min, DW_mode, DW_max,
-    beta_hat, beta_se, x_ref
+  i_diabetes, prev_mode, prev_lower, prev_upper, med_cap, p_detectable_dk,
+  D_years, deaths, seyll,
+  YLD_mode,
+  YLD_lower,
+  YLD_upper,
+  DW_min, DW_mode, DW_max,
+  beta_hat, beta_se, x_ref
 ) {
 
   # uncertainty in slope
@@ -452,7 +449,7 @@ run_mc_row_daly_korea_simple <- function(
 
   # RR at average detectable Danish exposure
   # log(RR) = beta * (Danish exposure - Korean reference dose)
-  rr_median <- exp(beta * (median_dk - x_ref))
+  rr_median <- exp(beta * (med_cap - x_ref))
 
   # PAF for only detectable population
   PAF <- (p_detectable_dk * (rr_median - 1)) /
@@ -512,14 +509,14 @@ run_mc_row_daly_korea_simple <- function(
 
 ```{r}
 run_mc_summary_daly_korea_simple <- function(
-    i_diabetes, prev_mode, prev_lower, prev_upper, median_dk, p_detectable_dk,
-    D_years, deaths, seyll,
-    YLD_mode,
-    YLD_lower,
-    YLD_upper,
-    DW_min, DW_mode, DW_max,
-    beta_hat, beta_se, x_ref,
-    nsim_outer = 1000
+  i_diabetes, prev_mode, prev_lower, prev_upper, med_cap, p_detectable_dk,
+  D_years, deaths, seyll,
+  YLD_mode,
+  YLD_lower,
+  YLD_upper,
+  DW_min, DW_mode, DW_max,
+  beta_hat, beta_se, x_ref,
+  nsim_outer = 1000
 ) {
 
   sims <- map_dfr(seq_len(nsim_outer), ~
@@ -528,7 +525,7 @@ run_mc_summary_daly_korea_simple <- function(
       prev_mode = prev_mode,
       prev_lower = prev_lower,
       prev_upper = prev_upper,
-      median_dk = median_dk,
+      med_cap = med_cap,
       p_detectable_dk = p_detectable_dk,
       D_years = D_years,
       deaths = deaths,
@@ -586,7 +583,6 @@ run_mc_summary_daly_korea_simple <- function(
 ```
 
 ```{r}
-set.seed(123)
 results_daly_korea_simple <- df %>%
   mutate(
     mc = pmap(
@@ -594,8 +590,8 @@ results_daly_korea_simple <- df %>%
         i_diabetes,
         prev_mode, 
         prev_lower, 
-        prev_upper,
-        median_dk,
+        prev_upper, 
+        med_cap,
         p_detectable_dk,
         D_years,
         deaths,
@@ -609,7 +605,7 @@ results_daly_korea_simple <- df %>%
         prev_mode = ..2,
         prev_lower = ..3,
         prev_upper = ..4,
-        median_dk = ..5,
+        med_cap = ..5,
         p_detectable_dk = ..6,
         D_years = ..7,
         deaths = ..8,
@@ -634,7 +630,7 @@ results_daly_korea_simple
 
 ```{r}
 getwd()
-write_xlsx(results_daly_korea_simple, "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_simple.xlsx")
+write_xlsx(results_daly_korea_simple, "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_simple_CAPPED.xlsx")
 ```
 
 ## Checking percentiles
@@ -682,8 +678,8 @@ x_ref
 
 # calculating rr at at median for each sex
 df %>%
-  mutate(rr_at_median = exp(beta_hat * (median_dk - x_ref))) %>%
-  dplyr::select(group, median_dk, rr_at_median)
+  mutate(rr_at_median = exp(beta_hat * (med_cap - x_ref))) %>%
+  dplyr::select(group, med_cap, rr_at_median)
 
 # is beta too steep?
 # rr is high
@@ -695,7 +691,7 @@ df %>%
 dose_t1
 dose_t2
 dose_t3
-unique(df$median_dk)
+unique(df$med_cap)
 unique(df$mean_exp_dk)
 
 
@@ -741,7 +737,7 @@ daly_plot
 
 # saving plot
 ggsave(
-  filename = "daly_plot_korea.png",
+  filename = "daly_plot_korea_CAPPED.png",
   plot = daly_plot,
   width = 7,
   height = 5,
@@ -750,6 +746,8 @@ ggsave(
 ```
 
 ```{r}
+set.seed(123)
+
 x_dk <- rlnorm(
   100000,
   meanlog = unique(df$meanlog_dk),
@@ -779,10 +777,11 @@ mc_test_both <- crossing(
         filter(group == g) %>%
         slice(1)
       
+      set.seed(123)
       
       run_mc_summary_daly_korea_simple(
         i_diabetes = test_row$i_diabetes,
-        median_dk = test_row$median_dk,
+        med_cap = test_row$med_cap,
         p_detectable_dk = test_row$p_detectable_dk,
         D_years = test_row$D_years,
         deaths = test_row$deaths,
@@ -807,12 +806,12 @@ mc_test_both <- crossing(
 
 ```{r}
 summary(fit_lin)
-AIC(fit_lin)
 ```
 
-## ADJUSTING 100 000
+## adjusted 100k
 
 ```{r}
+# Population-standardized estimates (per 100,000 population)
 population_male   <- 2964866
 population_female <- 2999193
 
@@ -864,6 +863,6 @@ results_daly_korea_simple_100k
 ```{r}
 write_xlsx(
   results_daly_korea_simple_100k,
-  "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_simple_100k.xlsx"
+  "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_simple_CAPPED_100k.xlsx"
 )
 ```

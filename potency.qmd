@@ -89,7 +89,7 @@ df_bisphenol_BPS_eq
 # er det samme
 ```
 
-## Korean diabetes DOSE-RESPONSE model 
+## Korean diabetes DOSE-RESPONSE model
 
 ```{r}
 # Korean ORs
@@ -280,8 +280,9 @@ rpert <- function(n, min, mode, max) {
 ## Monte Carlo
 
 ```{r}
-run_mc_row_daly_korea_prevalence <- function(
-    exposure_input, p_detectable_dk,
+run_mc_row_health_impact <- function(
+    baseline_exposure, substitution_exposure,
+    p_detectable_dk,
     deaths, seyll,
     prev_mode, prev_lower, prev_upper,
     YLD_mode, YLD_lower, YLD_upper,
@@ -290,12 +291,6 @@ run_mc_row_daly_korea_prevalence <- function(
   
   beta <- rnorm(1, mean = beta_hat, sd = beta_se)
   
-  rr <- exp(beta * (exposure_input - x_ref))
-  
-  PAF <- (p_detectable_dk * (rr - 1)) /
-    (1 + p_detectable_dk * (rr - 1))
-  
-  # Attributable prevalent cases
   prev_draw <- rpert(
     1,
     min = prev_lower,
@@ -303,9 +298,6 @@ run_mc_row_daly_korea_prevalence <- function(
     max = prev_upper
   )
   
-  AP <- PAF * prev_draw
-  
-  # YLD from prevalence/GBD-based YLD
   YLD_total_draw <- rpert(
     1,
     min = YLD_lower,
@@ -313,27 +305,66 @@ run_mc_row_daly_korea_prevalence <- function(
     max = YLD_upper
   )
   
-  YLD_prevalence <- PAF * YLD_total_draw
+  calc_burden <- function(exposure_input) {
+    rr <- exp(beta * (exposure_input - x_ref))
+    
+    PAF <- (p_detectable_dk * (rr - 1)) /
+      (1 + p_detectable_dk * (rr - 1))
+    
+    AP <- PAF * prev_draw
+    AD <- PAF * deaths
+    YLD_prevalence <- PAF * YLD_total_draw
+    YLL <- AD * seyll
+    DALY_prevalence <- YLD_prevalence + YLL
+    
+    tibble(
+      PAF = PAF,
+      AP = AP,
+      AD = AD,
+      YLD_prevalence = YLD_prevalence,
+      YLL = YLL,
+      DALY_prevalence = DALY_prevalence
+    )
+  }
   
-  # YLL
-  AD <- PAF * deaths
-  YLL <- AD * seyll
-  
-  # DALY
-  DALY_prevalence <- YLD_prevalence + YLL
+  baseline <- calc_burden(baseline_exposure)
+  substitution <- calc_burden(substitution_exposure)
   
   tibble(
-    PAF = PAF,
-    AP = AP,
-    AD = AD,
-    YLD_prevalence = YLD_prevalence,
-    YLL = YLL,
-    DALY_prevalence = DALY_prevalence
+    PAF_baseline = baseline$PAF,
+    PAF_substitution = substitution$PAF,
+    health_impact_PAF = substitution$PAF - baseline$PAF,
+    
+    AP_baseline = baseline$AP,
+    AP_substitution = substitution$AP,
+    health_impact_AP = substitution$AP - baseline$AP,
+    
+    AD_baseline = baseline$AD,
+    AD_substitution = substitution$AD,
+    health_impact_AD = substitution$AD - baseline$AD,
+    
+    YLD_prevalence_baseline = baseline$YLD_prevalence,
+    YLD_prevalence_substitution = substitution$YLD_prevalence,
+    health_impact_YLD_prevalence =
+      substitution$YLD_prevalence - baseline$YLD_prevalence,
+    
+    YLL_baseline = baseline$YLL,
+    YLL_substitution = substitution$YLL,
+    health_impact_YLL = substitution$YLL - baseline$YLL,
+    
+    DALY_prevalence_baseline = baseline$DALY_prevalence,
+    DALY_prevalence_substitution = substitution$DALY_prevalence,
+    health_impact_DALY_prevalence =
+      substitution$DALY_prevalence - baseline$DALY_prevalence
   )
 }
 
-run_mc_summary_daly_korea_prevalence <- function(
-    exposure_input, p_detectable_dk,
+```
+
+```{r}
+run_mc_summary_health_impact <- function(
+    baseline_exposure, substitution_exposure,
+    p_detectable_dk,
     deaths, seyll,
     prev_mode, prev_lower, prev_upper,
     YLD_mode, YLD_lower, YLD_upper,
@@ -342,8 +373,9 @@ run_mc_summary_daly_korea_prevalence <- function(
 ) {
   
   sims <- map_dfr(seq_len(nsim_outer), ~
-                    run_mc_row_daly_korea_prevalence(
-                      exposure_input = exposure_input,
+                    run_mc_row_health_impact(
+                      baseline_exposure = baseline_exposure,
+                      substitution_exposure = substitution_exposure,
                       p_detectable_dk = p_detectable_dk,
                       deaths = deaths,
                       seyll = seyll,
@@ -360,29 +392,20 @@ run_mc_summary_daly_korea_prevalence <- function(
   )
   
   tibble(
-    PAF_med = median(sims$PAF, na.rm = TRUE),
-    PAF_lo = quantile(sims$PAF, 0.025, na.rm = TRUE),
-    PAF_hi = quantile(sims$PAF, 0.975, na.rm = TRUE),
+    PAF_baseline_med = median(sims$PAF_baseline, na.rm = TRUE),
+    PAF_substitution_med = median(sims$PAF_substitution, na.rm = TRUE),
+    health_impact_PAF_med = median(sims$health_impact_PAF, na.rm = TRUE),
+    health_impact_PAF_lo = quantile(sims$health_impact_PAF, 0.025, na.rm = TRUE),
+    health_impact_PAF_hi = quantile(sims$health_impact_PAF, 0.975, na.rm = TRUE),
     
-    AP_med = median(sims$AP, na.rm = TRUE),
-    AP_lo = quantile(sims$AP, 0.025, na.rm = TRUE),
-    AP_hi = quantile(sims$AP, 0.975, na.rm = TRUE),
-    
-    AD_med = median(sims$AD, na.rm = TRUE),
-    AD_lo = quantile(sims$AD, 0.025, na.rm = TRUE),
-    AD_hi = quantile(sims$AD, 0.975, na.rm = TRUE),
-    
-    YLD_prevalence_med = median(sims$YLD_prevalence, na.rm = TRUE),
-    YLD_prevalence_lo = quantile(sims$YLD_prevalence, 0.025, na.rm = TRUE),
-    YLD_prevalence_hi = quantile(sims$YLD_prevalence, 0.975, na.rm = TRUE),
-    
-    YLL_med = median(sims$YLL, na.rm = TRUE),
-    YLL_lo = quantile(sims$YLL, 0.025, na.rm = TRUE),
-    YLL_hi = quantile(sims$YLL, 0.975, na.rm = TRUE),
-    
-    DALY_prevalence_med = median(sims$DALY_prevalence, na.rm = TRUE),
-    DALY_prevalence_lo = quantile(sims$DALY_prevalence, 0.025, na.rm = TRUE),
-    DALY_prevalence_hi = quantile(sims$DALY_prevalence, 0.975, na.rm = TRUE)
+    DALY_baseline_med = median(sims$DALY_prevalence_baseline, na.rm = TRUE),
+    DALY_substitution_med = median(sims$DALY_prevalence_substitution, na.rm = TRUE),
+    health_impact_DALY_prevalence_med =
+      median(sims$health_impact_DALY_prevalence, na.rm = TRUE),
+    health_impact_DALY_prevalence_lo =
+      quantile(sims$health_impact_DALY_prevalence, 0.025, na.rm = TRUE),
+    health_impact_DALY_prevalence_hi =
+      quantile(sims$health_impact_DALY_prevalence, 0.975, na.rm = TRUE)
   )
 }
 ```
@@ -406,178 +429,87 @@ df_model_input %>%
   )
 ```
 
-## Baseline Scenario
-
-```{r}
-set.seed(123)
-
-baseline_results <- df_model_input %>%
-  mutate(
-    scenario = "baseline_mixture",
-    exposure_input = baseline_mixture_BPS_eq,
-    mc = pmap(
-      list(
-        exposure_input,
-        p_detectable_dk,
-        deaths,
-        seyll,
-        prev_mode,
-        prev_lower,
-        prev_upper,
-        YLD_mode,
-        YLD_lower,
-        YLD_upper
-      ),
-      ~ run_mc_summary_daly_korea_prevalence(
-        exposure_input = ..1,
-        p_detectable_dk = ..2,
-        deaths = ..3,
-        seyll = ..4,
-        prev_mode = ..5,
-        prev_lower = ..6,
-        prev_upper = ..7,
-        YLD_mode = ..8,
-        YLD_lower = ..9,
-        YLD_upper = ..10,
-        beta_hat = beta_hat,
-        beta_se = beta_se,
-        x_ref = x_ref,
-        nsim_outer = 1000
-      )
-    )
-  ) %>%
-  unnest(mc)
-```
-
 ## Substitution Scenario
-
-```{r}
-set.seed(123)
-
-substitution_results <- df_model_input %>%
-  mutate(
-    scenario = "substitution",
-    exposure_input = substitution_BPS_dose,
-    mc = pmap(
-      list(
-        exposure_input,
-        p_detectable_dk,
-        deaths,
-        seyll,
-        prev_mode,
-        prev_lower,
-        prev_upper,
-        YLD_mode,
-        YLD_lower,
-        YLD_upper
-      ),
-      ~ run_mc_summary_daly_korea_prevalence(
-        exposure_input = ..1,
-        p_detectable_dk = ..2,
-        deaths = ..3,
-        seyll = ..4,
-        prev_mode = ..5,
-        prev_lower = ..6,
-        prev_upper = ..7,
-        YLD_mode = ..8,
-        YLD_lower = ..9,
-        YLD_upper = ..10,
-        beta_hat = beta_hat,
-        beta_se = beta_se,
-        x_ref = x_ref,
-        nsim_outer = 1000
-      )
-    )
-  ) %>%
-  unnest(mc)
-```
 
 ## Health Impact
 
 ```{r}
-# joining the two scenarios
-results_potency <- bind_rows(
-  baseline_results,
-  substitution_results
-)
+set.seed(123)
 
-health_impact <- results_potency %>%
-  dplyr::select(
-    group,
-    original_group,
-    RP_scenario,
-    RP_BPS_vs_BPA,
-    scenario,
-    exposure_input,
-    PAF_med,
-    PAF_lo,
-    PAF_hi,
-    AP_med,
-    AP_lo,
-    AP_hi,
-    AD_med,
-    AD_lo,
-    AD_hi,
-    YLD_prevalence_med,
-    YLD_prevalence_lo,
-    YLD_prevalence_hi,
-    YLL_med,
-    YLL_lo,
-    YLL_hi,
-    DALY_prevalence_med,
-    DALY_prevalence_lo,
-    DALY_prevalence_hi
-  ) %>%
-  pivot_wider(
-    names_from = scenario,
-    values_from = c(
-      exposure_input,
-      PAF_med,
-      PAF_lo,
-      PAF_hi,
-      AP_med,
-      AP_lo,
-      AP_hi,
-      AD_med,
-      AD_lo,
-      AD_hi,
-      YLD_prevalence_med,
-      YLD_prevalence_lo,
-      YLD_prevalence_hi,
-      YLL_med,
-      YLL_lo,
-      YLL_hi,
-      DALY_prevalence_med,
-      DALY_prevalence_lo,
-      DALY_prevalence_hi
+health_impact <- df_model_input %>%
+  mutate(
+    mc = pmap(
+      list(
+        baseline_mixture_BPS_eq,
+        substitution_BPS_dose,
+        p_detectable_dk,
+        deaths,
+        seyll,
+        prev_mode,
+        prev_lower,
+        prev_upper,
+        YLD_mode,
+        YLD_lower,
+        YLD_upper
+      ),
+      ~ run_mc_summary_health_impact(
+        baseline_exposure = ..1,
+        substitution_exposure = ..2,
+        p_detectable_dk = ..3,
+        deaths = ..4,
+        seyll = ..5,
+        prev_mode = ..6,
+        prev_lower = ..7,
+        prev_upper = ..8,
+        YLD_mode = ..9,
+        YLD_lower = ..10,
+        YLD_upper = ..11,
+        beta_hat = beta_hat,
+        beta_se = beta_se,
+        x_ref = x_ref,
+        nsim_outer = 1000
+      )
     )
   ) %>%
-  # subtracting the scenarios to estimate the health impacts
-  mutate(
-    health_impact_PAF_med =
-      PAF_med_substitution - PAF_med_baseline_mixture,
-    
-    health_impact_AP_med =
-      AP_med_substitution - AP_med_baseline_mixture,
-    
-    health_impact_AD_med =
-      AD_med_substitution - AD_med_baseline_mixture,
-    
-    health_impact_YLD_prevalence_med =
-      YLD_prevalence_med_substitution - YLD_prevalence_med_baseline_mixture,
-    
-    health_impact_YLL_med =
-      YLL_med_substitution - YLL_med_baseline_mixture,
-    
-    health_impact_DALY_prevalence_med =
-      DALY_prevalence_med_substitution - DALY_prevalence_med_baseline_mixture
-  )
-
-health_impact
+  unnest(mc)
 ```
 
 ## Export with excel
 
 ```{r}
 write_xlsx(health_impact, "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/health_impact.xlsx")
+```
+
+## 
+
+```{r}
+population_male   <- 2964866
+population_female <- 2999193
+
+health_impact_100k <- health_impact %>%
+  mutate(
+    population = case_when(
+      str_detect(group, "^Male")   ~ population_male,
+      str_detect(group, "^Female") ~ population_female
+    )
+  ) %>%
+  mutate(
+    across(
+      c(
+        DALY_baseline_med,
+        DALY_substitution_med,
+        health_impact_DALY_prevalence_med,
+        health_impact_DALY_prevalence_lo,
+        health_impact_DALY_prevalence_hi
+      ),
+      ~ .x / population * 100000,
+      .names = "{.col}_100k"
+    )
+  ) %>%
+  dplyr::select(-population)
+
+write_xlsx(
+  health_impact_100k,
+  "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/health_impact_100k.xlsx"
+)
 ```

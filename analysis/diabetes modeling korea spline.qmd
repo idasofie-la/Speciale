@@ -18,8 +18,6 @@ library(splines)
 ## Importing data
 
 ```{r}
-set.seed(123)
-
 # loading danish inputs, sex, LOD, BPS percentiles & diabetes incidence
 df <- read_excel("/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/data/diabetes korea (GBD).xlsx") %>%
   mutate(
@@ -69,6 +67,7 @@ meanlog_kor <- unname(fit_kor["meanlog"])
 sdlog_kor   <- unname(fit_kor["sdlog"])
 
 # Simulate Korean detectable exposure distribution
+set.seed(123)
 x_kor <- rlnorm(1e6, meanlog = meanlog_kor, sdlog = sdlog_kor)
 
 # Tertile cutpoints among detectable Korean values
@@ -181,7 +180,62 @@ df <- df %>%
     )
   )
 
+# downloaded from GBD
+# Sex-specific YLD estimates downloaded from GBD
+YLD_fem       <- 8355.60842682979
+YLD_fem_lower <- 5617.300593266269
+YLD_fem_upper <- 11465.14910195645
 
+YLD_male       <- 13225.904475796962
+YLD_male_lower <- 8916.644865520693
+YLD_male_upper <- 17957.837169143662
+
+# Add sex-specific central and uncertainty estimates to dataframe
+df <- df %>%
+  mutate(
+    YLD_mode = case_when(
+      str_detect(group, "^Female") ~ YLD_fem,
+      str_detect(group, "^Male")   ~ YLD_male,
+      TRUE ~ NA_real_
+    ),
+    YLD_lower = case_when(
+      str_detect(group, "^Female") ~ YLD_fem_lower,
+      str_detect(group, "^Male")   ~ YLD_male_lower,
+      TRUE ~ NA_real_
+    ),
+    YLD_upper = case_when(
+      str_detect(group, "^Female") ~ YLD_fem_upper,
+      str_detect(group, "^Male")   ~ YLD_male_upper,
+      TRUE ~ NA_real_
+    )
+  )
+
+prev_f       <- 122399.73795153094
+prev_f_lower <- 111088.08159363415
+prev_f_upper <- 134597.21198640313
+
+prev_m       <- 194510.88289338743
+prev_m_lower <- 169049.8026957066
+prev_m_upper <- 211790.44277738212
+
+df <- df %>%
+  mutate(
+    prev_mode = case_when(
+      str_detect(group, "^Female") ~ prev_f,
+      str_detect(group, "^Male")   ~ prev_m,
+      TRUE ~ NA_real_
+    ),
+    prev_lower = case_when(
+      str_detect(group, "^Female") ~ prev_f_lower,
+      str_detect(group, "^Male")   ~ prev_m_lower,
+      TRUE ~ NA_real_
+    ),
+    prev_upper = case_when(
+      str_detect(group, "^Female") ~ prev_f_upper,
+      str_detect(group, "^Male")   ~ prev_m_upper,
+      TRUE ~ NA_real_
+    )
+  )
 ```
 
 ## Inputs for YLL
@@ -231,14 +285,6 @@ DW_mode <- YLD_total / prev_total
 DW_min  <- YLD_lower_total / prev_upper_total
 DW_max  <- YLD_upper_total / prev_lower_total
 
-df <- df %>%
-  mutate(
-    YLD_sex = case_when(
-      str_detect(group, "^Female") ~ YLD_fem,
-      str_detect(group, "^Male")   ~ YLD_male,
-      TRUE ~ NA_real_
-    )
-  )
 ```
 
 ## Helper functions
@@ -256,9 +302,11 @@ rpert <- function(n, min, mode, max) {
 
 ```{r}
 run_mc_row_daly_korea_quad <- function(
-    i_diabetes, med_cap, p_detectable_dk,
+    i_diabetes, prev_mode, prev_lower, prev_upper, median_dk, p_detectable_dk,
     D_years, deaths, seyll,
-    YLD_sex,
+    YLD_mode,
+    YLD_lower,
+    YLD_upper,
     DW_min, DW_mode, DW_max,
     coef_quad, vcov_quad, dose_t1
 ) {
@@ -270,7 +318,7 @@ run_mc_row_daly_korea_quad <- function(
   b2 <- beta_draw[2]
   
   # centered Danish exposure
-  dose_c_dk <- med_cap - dose_t1
+  dose_c_dk <- median_dk - dose_t1
   
   # quadratic exposure-response:
   # log(RR) = b1*x + b2*x^2
@@ -283,17 +331,33 @@ run_mc_row_daly_korea_quad <- function(
   PAF <- (p_detectable_dk * (rr_median - 1)) /
     (1 + p_detectable_dk * (rr_median - 1))
   
-  # attributable cases
-  AC <- PAF * i_diabetes
+  # drawing prevalence
+  prev <- rpert(
+    1,
+    min  = prev_lower,
+    mode = prev_mode,
+    max  = prev_upper
+  )
+  
+  # attributable incidence and prevalence
+  AI <- PAF * i_diabetes
+  AP <- PAF * prev
   
   # draw disability weight
   DW <- rpert(1, DW_min, DW_mode, DW_max)
   
   # incidence-based attributable YLD
-  YLD_incidence <- AC * D_years * DW
+  YLD_incidence <- AI * D_years * DW
   
   # prevalence/GBD-based attributable YLD
-  YLD_prevalence <- PAF * YLD_sex
+  YLD_total_draw <- rpert(
+    1,
+    min  = YLD_lower,
+    mode = YLD_mode,
+    max  = YLD_upper
+  )
+  
+  YLD_prevalence <- PAF * YLD_total_draw
   
   # attributable deaths
   AD <- PAF * deaths
@@ -307,7 +371,8 @@ run_mc_row_daly_korea_quad <- function(
   
   tibble(
     PAF = PAF,
-    AC = AC,
+    AI = AI,
+    AP = AP,
     AD = AD,
     YLD_incidence = YLD_incidence,
     YLD_prevalence = YLD_prevalence,
@@ -322,9 +387,11 @@ run_mc_row_daly_korea_quad <- function(
 
 ```{r}
 run_mc_summary_daly_korea_quad <- function(
-    i_diabetes, med_cap, p_detectable_dk,
+    i_diabetes, prev_mode, prev_lower, prev_upper, median_dk, p_detectable_dk,
     D_years, deaths, seyll,
-    YLD_sex,
+    YLD_mode,
+    YLD_lower,
+    YLD_upper,
     DW_min, DW_mode, DW_max,
     coef_quad, vcov_quad, dose_t1,
     nsim_outer = 1000
@@ -333,12 +400,17 @@ run_mc_summary_daly_korea_quad <- function(
   sims <- map_dfr(seq_len(nsim_outer), ~
                     run_mc_row_daly_korea_quad(
                       i_diabetes = i_diabetes,
-                      med_cap = med_cap,
+                      prev_mode = prev_mode,
+                      prev_lower = prev_lower,
+                      prev_upper = prev_upper,
+                      median_dk = median_dk,
                       p_detectable_dk = p_detectable_dk,
                       D_years = D_years,
                       deaths = deaths,
                       seyll = seyll,
-                      YLD_sex = YLD_sex,
+                      YLD_mode = YLD_mode,
+                      YLD_lower = YLD_lower,
+                      YLD_upper = YLD_upper,
                       DW_min = DW_min,
                       DW_mode = DW_mode,
                       DW_max = DW_max,
@@ -353,9 +425,13 @@ run_mc_summary_daly_korea_quad <- function(
     PAF_lo  = quantile(sims$PAF, 0.025, na.rm = TRUE),
     PAF_hi  = quantile(sims$PAF, 0.975, na.rm = TRUE),
     
-    AC_med = median(sims$AC, na.rm = TRUE),
-    AC_lo  = quantile(sims$AC, 0.025, na.rm = TRUE),
-    AC_hi  = quantile(sims$AC, 0.975, na.rm = TRUE),
+    AI_med = median(sims$AI, na.rm = TRUE),
+    AI_lo  = quantile(sims$AI, 0.025, na.rm = TRUE),
+    AI_hi  = quantile(sims$AI, 0.975, na.rm = TRUE),
+    
+    AP_med = median(sims$AP, na.rm = TRUE),
+    AP_lo  = quantile(sims$AP, 0.025, na.rm = TRUE),
+    AP_hi  = quantile(sims$AP, 0.975, na.rm = TRUE),
     
     AD_med = median(sims$AD, na.rm = TRUE),
     AD_lo  = quantile(sims$AD, 0.025, na.rm = TRUE),
@@ -387,26 +463,38 @@ run_mc_summary_daly_korea_quad <- function(
 ## Run Monte Carlo
 
 ```{r}
+set.seed(123)
+
 results_daly_korea_quad <- df %>%
   mutate(
     mc = pmap(
       list(
         i_diabetes,
-        med_cap,
+        prev_mode, 
+        prev_lower, 
+        prev_upper,
+        median_dk,
         p_detectable_dk,
         D_years,
         deaths,
         seyll,
-        YLD_sex
+        YLD_mode,
+        YLD_lower,
+        YLD_upper
       ),
       ~ run_mc_summary_daly_korea_quad(
         i_diabetes = ..1,
-        med_cap = ..2,
-        p_detectable_dk = ..3,
-        D_years = ..4,
-        deaths = ..5,
-        seyll = ..6,
-        YLD_sex = ..7,
+        prev_mode = ..2,
+        prev_lower = ..3,
+        prev_upper = ..4,
+        median_dk = ..5,
+        p_detectable_dk = ..6,
+        D_years = ..7,
+        deaths = ..8,
+        seyll = ..9,
+        YLD_mode = ..10,
+        YLD_lower = ..11,
+        YLD_upper = ..12,
         DW_min = DW_min,
         DW_mode = DW_mode,
         DW_max = DW_max,
@@ -422,12 +510,16 @@ results_daly_korea_quad <- df %>%
 results_daly_korea_quad
 ```
 
+```{r}
+write_xlsx(results_daly_korea_quad, "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_quad.xlsx")
+```
+
 ## plotting quadratic model
 
 ```{r}
 # Prediction grid for quadratic model
 pred_grid_quad <- tibble(
-  dose = seq(min(study_dat$dose), max(df$med_cap), length.out = 100)
+  dose = seq(min(study_dat$dose), max(df$median_dk), length.out = 100)
 ) %>%
   mutate(dose_c = dose - dose_t1) %>%
   bind_cols(
@@ -483,7 +575,7 @@ p_quad <- ggplot() +
   geom_segment(
     aes(
       x = min(study_dat$dose),
-      xend = max(df$med_cap),
+      xend = max(df$median_dk),
       y = 0,
       yend = 0
     ),
@@ -492,7 +584,7 @@ p_quad <- ggplot() +
     color = "grey40"
   ) +
   geom_vline(
-    xintercept = unique(df$med_cap),
+    xintercept = unique(df$median_dk),
     linetype = "dashed",
     linewidth = 0.4,
     color = "grey40"
@@ -512,7 +604,7 @@ p_quad <- ggplot() +
 p_quad
 
 ggsave(
-  filename = "NEW_logrr_quadratic_model_korea.png",
+  filename = "../figures/NEW_logrr_quadratic_model_korea.png",
   plot = p_quad,
   width = 7,
   height = 5,
@@ -541,7 +633,7 @@ summary(fit_spline)
 pred_grid_spline <- tibble(
   dose = seq(
     min(study_dat$dose),
-    max(df$med_cap),
+    max(df$median_dk),
     length.out = 100
   )
 ) %>%
@@ -615,7 +707,7 @@ p_spline <- ggplot() +
   geom_segment(
     aes(
       x = min(study_dat$dose),
-      xend = max(df$med_cap),
+      xend = max(df$median_dk),
       y = 0,
       yend = 0
     ),
@@ -624,7 +716,7 @@ p_spline <- ggplot() +
     color = "grey40"
   ) +
   geom_vline(
-    xintercept = unique(df$med_cap),
+    xintercept = unique(df$median_dk),
     linetype = "dashed",
     linewidth = 0.4,
     color = "grey40"
@@ -647,7 +739,7 @@ p_spline <- ggplot() +
 p_spline
 
 ggsave(
-  filename = "NEW_logrr_spline_model_korea.png",
+  filename = "../figures/NEW_logrr_spline_model_korea.png",
   plot = p_spline,
   width = 7,
   height = 5,
@@ -659,20 +751,19 @@ ggsave(
 
 ```{r}
 run_mc_row_daly_korea_spline <- function(
-    i_diabetes, med_cap, p_detectable_dk,
+    i_diabetes, prev_mode, prev_lower, prev_upper, median_dk, p_detectable_dk,
     D_years, deaths, seyll,
-    YLD_sex,
+    YLD_mode,
+    YLD_lower,
+    YLD_upper,
     DW_min, DW_mode, DW_max,
     fit_spline, coef_spline, vcov_spline, dose_t1
 ) {
   
-  # draw one possible set of spline coefficients
   beta_draw <- MASS::mvrnorm(1, mu = coef_spline, Sigma = vcov_spline)
   
-  # centered Danish exposure
-  dose_c_dk <- med_cap - dose_t1
+  dose_c_dk <- median_dk - dose_t1
   
-  # create spline design matrix for Danish dose
   new_dat <- tibble(dose_c = dose_c_dk)
   
   X_new <- model.matrix(
@@ -680,41 +771,47 @@ run_mc_row_daly_korea_spline <- function(
     data = new_dat
   )
   
-  # predicted log(RR) from spline model
   logrr_median <- as.numeric(X_new %*% beta_draw)
-  
-  # convert to RR
   rr_median <- exp(logrr_median)
   
-  # PAF for only detectable population
   PAF <- (p_detectable_dk * (rr_median - 1)) /
     (1 + p_detectable_dk * (rr_median - 1))
   
-  # attributable cases
-  AC <- PAF * i_diabetes
+  # drawing prevalence
+  prev <- rpert(
+    1,
+    min  = prev_lower,
+    mode = prev_mode,
+    max  = prev_upper
+  )
   
-  # draw disability weight
+  # attributable incidence and prevalence
+  AI <- PAF * i_diabetes
+  AP <- PAF * prev
+  
   DW <- rpert(1, DW_min, DW_mode, DW_max)
   
-  # incidence-based attributable YLD
-  YLD_incidence <- AC * D_years * DW
+  YLD_incidence <- AI * D_years * DW
   
-  # prevalence/GBD-based attributable YLD
-  YLD_prevalence <- PAF * YLD_sex
+  YLD_total_draw <- rpert(
+    1,
+    min  = YLD_lower,
+    mode = YLD_mode,
+    max  = YLD_upper
+  )
   
-  # attributable deaths
+  YLD_prevalence <- PAF * YLD_total_draw
+  
   AD <- PAF * deaths
-  
-  # years of life lost
   YLL <- AD * seyll
   
-  # DALYs
   DALY_incidence <- YLD_incidence + YLL
   DALY_prevalence <- YLD_prevalence + YLL
   
   tibble(
     PAF = PAF,
-    AC = AC,
+    AI = AI,
+    AP = AP,
     AD = AD,
     YLD_incidence = YLD_incidence,
     YLD_prevalence = YLD_prevalence,
@@ -727,9 +824,11 @@ run_mc_row_daly_korea_spline <- function(
 
 ```{r}
 run_mc_summary_daly_korea_spline <- function(
-    i_diabetes, med_cap, p_detectable_dk,
+    i_diabetes, prev_mode, prev_lower, prev_upper, median_dk, p_detectable_dk,
     D_years, deaths, seyll,
-    YLD_sex,
+    YLD_mode,
+    YLD_lower,
+    YLD_upper,
     DW_min, DW_mode, DW_max,
     fit_spline, coef_spline, vcov_spline, dose_t1,
     nsim_outer = 1000
@@ -738,12 +837,17 @@ run_mc_summary_daly_korea_spline <- function(
   sims <- map_dfr(seq_len(nsim_outer), ~
                     run_mc_row_daly_korea_spline(
                       i_diabetes = i_diabetes,
-                      med_cap = med_cap,
+                      prev_mode = prev_mode,
+                      prev_lower = prev_lower,
+                      prev_upper = prev_upper,
+                      median_dk = median_dk,
                       p_detectable_dk = p_detectable_dk,
                       D_years = D_years,
                       deaths = deaths,
                       seyll = seyll,
-                      YLD_sex = YLD_sex,
+                      YLD_mode = YLD_mode,
+                      YLD_lower = YLD_lower,
+                      YLD_upper = YLD_upper,
                       DW_min = DW_min,
                       DW_mode = DW_mode,
                       DW_max = DW_max,
@@ -759,9 +863,13 @@ run_mc_summary_daly_korea_spline <- function(
     PAF_lo  = quantile(sims$PAF, 0.025, na.rm = TRUE),
     PAF_hi  = quantile(sims$PAF, 0.975, na.rm = TRUE),
     
-    AC_med = median(sims$AC, na.rm = TRUE),
-    AC_lo  = quantile(sims$AC, 0.025, na.rm = TRUE),
-    AC_hi  = quantile(sims$AC, 0.975, na.rm = TRUE),
+    AI_med = median(sims$AI, na.rm = TRUE),
+    AI_lo  = quantile(sims$AI, 0.025, na.rm = TRUE),
+    AI_hi  = quantile(sims$AI, 0.975, na.rm = TRUE),
+    
+    AP_med = median(sims$AP, na.rm = TRUE),
+    AP_lo  = quantile(sims$AP, 0.025, na.rm = TRUE),
+    AP_hi  = quantile(sims$AP, 0.975, na.rm = TRUE),
     
     AD_med = median(sims$AD, na.rm = TRUE),
     AD_lo  = quantile(sims$AD, 0.025, na.rm = TRUE),
@@ -791,26 +899,38 @@ run_mc_summary_daly_korea_spline <- function(
 ```
 
 ```{r}
+set.seed(123)
+
 results_daly_korea_spline <- df %>%
   mutate(
     mc = pmap(
       list(
         i_diabetes,
-        med_cap,
+        prev_mode,
+        prev_lower,
+        prev_upper,
+        median_dk,
         p_detectable_dk,
         D_years,
         deaths,
         seyll,
-        YLD_sex
+        YLD_mode,
+        YLD_lower,
+        YLD_upper
       ),
       ~ run_mc_summary_daly_korea_spline(
         i_diabetes = ..1,
-        med_cap = ..2,
-        p_detectable_dk = ..3,
-        D_years = ..4,
-        deaths = ..5,
-        seyll = ..6,
-        YLD_sex = ..7,
+        prev_mode = ..2,
+        prev_lower = ..3,
+        prev_upper = ..4,
+        median_dk = ..5,
+        p_detectable_dk = ..6,
+        D_years = ..7,
+        deaths = ..8,
+        seyll = ..9,
+        YLD_mode = ..10,
+        YLD_lower = ..11,
+        YLD_upper = ..12,
         DW_min = DW_min,
         DW_mode = DW_mode,
         DW_max = DW_max,
@@ -827,9 +947,15 @@ results_daly_korea_spline <- df %>%
 results_daly_korea_spline
 ```
 
+```{r}
+write_xlsx(results_daly_korea_spline, "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_spline.xlsx")
+```
+
 ## Monotonocity?
 
 ```{r}
+#| eval: false
+#| include: false
 # mono
 library(scam)
 
@@ -852,7 +978,7 @@ dose_scale <- max(study_dat2$dose_c, na.rm = TRUE)
 pred_grid_mono <- tibble(
   dose = seq(
     min(study_dat2$dose),
-    max(df$med_cap),
+    max(df$median_dk),
     length.out = 200
   )
 ) %>%
@@ -877,7 +1003,7 @@ p_mono_spline <- ggplot(pred_grid_mono, aes(x = dose, y = rr_fit)) +
     color = "#54278f"
   ) +
   geom_vline(
-    xintercept = unique(df$med_cap),
+    xintercept = unique(df$median_dk),
     linetype = "dashed"
   ) +
   labs(
@@ -894,7 +1020,9 @@ p_mono_spline
 ```
 
 ```{r}
-xmax <- max(df$med_cap, study_dat2$dose, na.rm = TRUE) - dose_t1
+#| eval: false
+#| include: false
+xmax <- max(df$median_dk, study_dat2$dose, na.rm = TRUE) - dose_t1
 
 x_constraint <- seq(0, xmax, length.out = 200)
 
@@ -929,7 +1057,7 @@ coef_mono_quad
 pred_grid_mono_quad <- tibble(
   dose = seq(
     min(study_dat2$dose),
-    max(df$med_cap, study_dat2$dose, na.rm = TRUE),
+    max(df$median_dk, study_dat2$dose, na.rm = TRUE),
     length.out = 200
   )
 ) %>%
@@ -949,7 +1077,7 @@ p_mono_quad <- ggplot(pred_grid_mono_quad, aes(x = dose, y = rr_fit)) +
     color = "#045A8DFF"
   ) +
   geom_vline(
-    xintercept = unique(df$med_cap),
+    xintercept = unique(df$median_dk),
     linetype = "dashed"
   ) +
   labs(
@@ -961,4 +1089,47 @@ p_mono_quad <- ggplot(pred_grid_mono_quad, aes(x = dose, y = rr_fit)) +
   theme(plot.title = element_text(size = 16, face = "bold"))
 
 p_mono_quad
+```
+
+## FIT CHECK
+
+```{r}
+summary(fit_spline)
+```
+
+## ADJUSTING FOR 100 000
+
+```{r}
+population_male   <- 2964866
+population_female <- 2999193
+
+results_daly_korea_spline_100k <- results_daly_korea_spline %>%
+  mutate(
+    population = case_when(
+      str_detect(group, "^Male")   ~ population_male,
+      str_detect(group, "^Female") ~ population_female
+    )
+  ) %>%
+  mutate(
+    across(
+      c(
+        AI_med, AI_lo, AI_hi,
+        AP_med, AP_lo, AP_hi,
+        AD_med, AD_lo, AD_hi,
+        YLD_incidence_med, YLD_incidence_lo, YLD_incidence_hi,
+        YLD_prevalence_med, YLD_prevalence_lo, YLD_prevalence_hi,
+        YLL_med, YLL_lo, YLL_hi,
+        DALY_incidence_med, DALY_incidence_lo, DALY_incidence_hi,
+        DALY_prevalence_med, DALY_prevalence_lo, DALY_prevalence_hi
+      ),
+      ~ .x / population * 100000,
+      .names = "{.col}_100k"
+    )
+  ) %>%
+  dplyr::select(-population)
+
+write_xlsx(
+  results_daly_korea_spline_100k,
+  "/Users/idasofieadrian/Desktop/DTU/SPECIALE/Speciale/results/results_diabetes_korea_spline_100k.xlsx"
+)
 ```

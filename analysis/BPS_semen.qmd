@@ -138,7 +138,7 @@ se_q4 <- (log(UCL_q4) - log(LCL_q4)) / (2 * 1.96)
 # creatine adjusted and for two samples
 fit_chi <- get.lnorm.par(
   p = c(0.25, 0.50, 0.75),
-  q = c(0.13, 0.29, 0.69),
+  q = c(0.17, 0.38, 0.81),
   show.output = FALSE,
   plot = TRUE
 )
@@ -313,7 +313,7 @@ p_logrr
 
 # saving plot
 ggsave(
-  filename = "../figures/logrr_linear_model_bps_semen.png",
+  filename = "../figures/logrr_linear_model_bps_semen_UN.png",
   plot = p_logrr,
   width = 7,
   height = 5,
@@ -513,6 +513,8 @@ run_mc_summary_semen <- function(
 ```
 
 ```{r}
+set.seed(123)
+
 results_semen <- df %>%
   mutate(
     mc = pmap(
@@ -562,10 +564,8 @@ dose_q4
 ## Write to excel
 
 ```{r}
-#| eval: false
-#| include: false
 getwd()
-#write_xlsx(results_semen, "results_semen_china.xlsx")
+write_xlsx(results_semen, "../results/results_semen_china_UN.xlsx")
 ```
 
 # BOTTOM UP APPROACH
@@ -667,11 +667,6 @@ ggplot(p_below_summary, aes(x = scenario, y = percent_below_32, fill = scenario)
   ) +
   theme_classic() +
   theme(legend.position = "none")
-```
-
-```{r}
-getwd()
-write_xlsx(results_semen, "results_semen_china.xlsx")
 ```
 
 ### BOTTOM UP WITH DOSE-RESPONSE
@@ -819,6 +814,11 @@ results_bottom_up_motility <- run_mc_summary_bottom_up_motility(
 )
 
 results_bottom_up_motility
+```
+
+```{r}
+getwd()
+write_xlsx(results_bottom_up_motility, "../results/results_motility_china_UN.xlsx")
 ```
 
 ### plotting :-)
@@ -1157,10 +1157,68 @@ p_motility_model <- ggplot() +
 p_motility_model
 
 ggsave(
-  filename = "../figures/linear_model_bps_motility_change.png",
+  filename = "../figures/linear_model_bps_motility_change_UN.png",
   plot = p_motility_model,
   width = 7,
   height = 5,
   dpi = 300
+)
+```
+
+## FIT CHECK
+
+```{r}
+summary(fit_lin)
+
+summary(fit_motility)
+```
+
+## ADJUSTING 100
+
+```{r}
+
+## Per 100,000 men
+population_male   <- 2964866
+
+## TOP-DOWN: semen / infertility results per 100,000 men
+results_semen_100k <- results_semen %>%
+  mutate(
+    across(
+      c(
+        AC_med, AC_lo, AC_hi,
+        YLD_reconstructed_med, YLD_reconstructed_lo, YLD_reconstructed_hi,
+        YLD_gbd_med, YLD_gbd_lo, YLD_gbd_hi,
+        DALY_reconstructed_med, DALY_reconstructed_lo, DALY_reconstructed_hi,
+        DALY_gbd_med, DALY_gbd_lo, DALY_gbd_hi
+      ),
+      ~ .x / population_male * 100000,
+      .names = "{.col}_100k"
+    )
+  )
+
+write_xlsx(
+  results_semen_100k,
+  "../results/results_semen_china_100k_UN.xlsx"
+)
+```
+
+```{r}
+## BOTTOM-UP: poor motility results per 100,000 men
+results_bottom_up_motility_100k <- results_bottom_up_motility %>%
+  mutate(
+    across(
+      c(
+        AC_poor_motility_med,
+        AC_poor_motility_lo,
+        AC_poor_motility_hi
+      ),
+      ~ .x / population_male * 100000,
+      .names = "{.col}_100k"
+    )
+  )
+
+write_xlsx(
+  results_bottom_up_motility_100k,
+  "../results/results_motility_china_100k_UN.xlsx"
 )
 ```
